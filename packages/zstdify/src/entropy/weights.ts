@@ -32,7 +32,7 @@ export function readWeightsDirect(
 }
 
 const MAX_WEIGHT_SYMBOL = 11;
-const MAX_WEIGHT_TABLE_LOG = 6;
+const MAX_WEIGHT_TABLE_LOG = 7;
 
 /**
  * Read Huffman weights from FSE-compressed stream.
@@ -50,22 +50,24 @@ export function readWeightsFSE(
     throw new ZstdError('FSE-compressed weights truncated', 'corruption_detected');
   }
 
+  const header = data.subarray(offset, offset + compressedSize);
+
   const { normalizedCounter, tableLog, bytesRead: ncountBytes } = readNCount(
-    data,
-    offset,
+    header,
+    0,
     MAX_WEIGHT_SYMBOL,
     MAX_WEIGHT_TABLE_LOG,
   );
 
   const table = buildFSEDecodeTable(normalizedCounter, tableLog);
-  const streamStart = offset + ncountBytes;
+  const streamStart = ncountBytes;
   const streamLength = compressedSize - ncountBytes;
 
   if (streamLength <= 0) {
     throw new ZstdError('FSE-compressed weights: no stream after header', 'corruption_detected');
   }
 
-  const stream = data.subarray(streamStart, streamStart + streamLength);
+  const stream = header.subarray(streamStart, streamStart + streamLength);
   const reader = new BitReaderReverse(stream, 0, streamLength);
   reader.skipPadding();
 
@@ -80,24 +82,25 @@ export function readWeightsFSE(
     throw new ZstdError('FSE-compressed weights: truncated initial states', 'corruption_detected');
   }
 
-  const decodeOne = (s: { value: number }): number | null => {
-    try {
-      return decodeFSESymbol(table, tableLog, reader, s);
-    } catch {
-      return null;
-    }
-  };
-
   while (weights.length < 255) {
-    const sym1 = decodeOne(state1);
-    if (sym1 === null) break;
-    weights.push(sym1);
-
+    try {
+      const sym1 = decodeFSESymbol(table, tableLog, reader, state1);
+      weights.push(sym1);
+    } catch {
+      const tail = table[state2.value];
+      if (tail) weights.push(tail.symbol);
+      break;
+    }
     if (weights.length >= 255) break;
 
-    const sym2 = decodeOne(state2);
-    if (sym2 === null) break;
-    weights.push(sym2);
+    try {
+      const sym2 = decodeFSESymbol(table, tableLog, reader, state2);
+      weights.push(sym2);
+    } catch {
+      const tail = table[state1.value];
+      if (tail) weights.push(tail.symbol);
+      break;
+    }
   }
 
   if (weights.length < 2) {

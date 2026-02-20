@@ -5,6 +5,7 @@ export default defineConfig({
     include: [
       'packages/zstdify/src/**/*.test.ts',
       'packages/zstdify-tests/src/**/*.test.ts',
+      'packages/cli-tests/src/**/*.test.ts',
     ],
     environment: 'node',
     watch: false,

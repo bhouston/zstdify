@@ -226,10 +226,19 @@ export function decodeSequences(
   }
   const reader = new BitReaderReverse(bitstream, 0, bitstreamSize);
   reader.skipPadding();
+  const readBitsSafe = (numBits: number): number => {
+    if (numBits <= 0) return 0;
+    try {
+      return reader.readBits(numBits);
+    } catch {
+      // zstd decoders treat over-read tail bits as zeroes on final states.
+      return 0;
+    }
+  };
   // Initial states are read in LL, OF, ML order.
-  const stateLL = { value: reader.readBits(llTableLog) };
-  const stateOF = { value: reader.readBits(ofTableLog) };
-  const stateML = { value: reader.readBits(mlTableLog) };
+  const stateLL = { value: readBitsSafe(llTableLog) };
+  const stateOF = { value: readBitsSafe(ofTableLog) };
+  const stateML = { value: readBitsSafe(mlTableLog) };
 
   const sequences: Sequence[] = [];
 
@@ -243,15 +252,15 @@ export function decodeSequences(
     const mlCode = mlRow.symbol;
     const llCode = llRow.symbol;
 
-    const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? reader.readBits(offsetCode) : 0);
+    const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? readBitsSafe(offsetCode) : 0);
 
     const matchLength = mlCode <= 31
       ? mlCode + 3
-      : (ML_BASELINE[mlCode] ?? 0) + reader.readBits(ML_NUMBITS[mlCode] ?? 0);
+      : (ML_BASELINE[mlCode] ?? 0) + readBitsSafe(ML_NUMBITS[mlCode] ?? 0);
 
     const literalsLength = llCode <= 15
       ? llCode
-      : (LL_BASELINE[llCode] ?? 0) + reader.readBits(LL_NUMBITS[llCode] ?? 0);
+      : (LL_BASELINE[llCode] ?? 0) + readBitsSafe(LL_NUMBITS[llCode] ?? 0);
 
     sequences.push({
       literalsLength,
@@ -261,9 +270,9 @@ export function decodeSequences(
 
     if (!isLast) {
       // State updates for next sequence are LL, ML, OF.
-      stateLL.value = llRow.baseline + (llRow.numBits > 0 ? reader.readBits(llRow.numBits) : 0);
-      stateML.value = mlRow.baseline + (mlRow.numBits > 0 ? reader.readBits(mlRow.numBits) : 0);
-      stateOF.value = ofRow.baseline + (ofRow.numBits > 0 ? reader.readBits(ofRow.numBits) : 0);
+      stateLL.value = llRow.baseline + (llRow.numBits > 0 ? readBitsSafe(llRow.numBits) : 0);
+      stateML.value = mlRow.baseline + (mlRow.numBits > 0 ? readBitsSafe(mlRow.numBits) : 0);
+      stateOF.value = ofRow.baseline + (ofRow.numBits > 0 ? readBitsSafe(ofRow.numBits) : 0);
     }
   }
 

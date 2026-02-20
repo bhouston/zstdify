@@ -57,7 +57,9 @@ export function executeSequences(
       }
       offset = repOffsets[repeatIndex] ?? 0;
     }
-    if (offset > outPos || offset > windowSize) {
+    const produced = outPos - historyLength;
+    const maxReachBack = produced <= windowSize ? produced + historyLength : windowSize;
+    if (offset <= 0 || offset > maxReachBack) {
       throw new ZstdError('Invalid match offset', 'corruption_detected');
     }
     for (let i = 0; i < seq.matchLength; i++) {

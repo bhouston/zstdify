@@ -44,4 +44,11 @@ describe('roundtrip', () => {
     const decompressed = decompress(compressed);
     expect(decompressed).toEqual(input);
   });
+
+  it('round-trips with optional frame checksum enabled', () => {
+    const input = new TextEncoder().encode('checksum-enabled roundtrip payload');
+    const compressed = compress(input, { level: 3, checksum: true });
+    const decompressed = decompress(compressed);
+    expect(decompressed).toEqual(input);
+  });
 });

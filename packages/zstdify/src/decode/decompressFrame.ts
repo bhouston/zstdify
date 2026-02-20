@@ -21,13 +21,17 @@ export function decompressFrame(
   data: Uint8Array,
   offset: number,
   header: FrameHeader,
+  dictionaryContent?: Uint8Array,
   maxSize?: number,
 ): { output: Uint8Array; bytesConsumed: number } {
   let pos = offset + 4 + header.headerSize;
   const chunks: Uint8Array[] = [];
   let totalSize = 0;
   const repOffsets: [number, number, number] = [1, 4, 8];
-  let history = new Uint8Array(0);
+  let history: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+  if (dictionaryContent && dictionaryContent.length > 0) {
+    history = dictionaryContent.slice();
+  }
   let prevHuffmanTable: { table: ReturnType<typeof import('../entropy/huffman.js').buildHuffmanDecodeTable>; maxNumBits: number } | null = null;
   let prevSeqTables: SequenceTables | null = null;
 
@@ -119,12 +123,16 @@ export function decompressFrame(
     if (block.lastBlock) break;
   }
 
+  const output = concatenateChunks(chunks);
+  if (header.contentSize !== null && output.length !== header.contentSize) {
+    throw new ZstdError('Frame content size mismatch', 'corruption_detected');
+  }
+
   if (header.hasContentChecksum) {
     if (pos + 4 > data.length) {
       throw new ZstdError('Content checksum truncated', 'corruption_detected');
     }
     const storedChecksum = readU32LE(data, pos);
-    const output = concatenateChunks(chunks);
     if (!validateContentChecksum(output, storedChecksum)) {
       throw new ZstdError('Content checksum mismatch', 'corruption_detected');
     }
@@ -132,17 +140,20 @@ export function decompressFrame(
     return { output, bytesConsumed: pos - offset };
   }
 
-  const output = concatenateChunks(chunks);
   return { output, bytesConsumed: pos - offset };
 }
 
-function appendToHistory(history: Uint8Array, chunk: Uint8Array, windowSize: number): Uint8Array {
+function appendToHistory(
+  history: Uint8Array<ArrayBufferLike>,
+  chunk: Uint8Array<ArrayBufferLike>,
+  windowSize: number,
+): Uint8Array<ArrayBufferLike> {
   if (windowSize <= 0 || chunk.length === 0) {
     return history;
   }
   const maxHistory = Math.max(1, windowSize);
   if (chunk.length >= maxHistory) {
-    return chunk.subarray(chunk.length - maxHistory).slice();
+    return new Uint8Array(chunk.subarray(chunk.length - maxHistory));
   }
   const keepFromHistory = Math.min(history.length, maxHistory - chunk.length);
   const next = new Uint8Array(keepFromHistory + chunk.length);

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { decompress } from 'zstdify';
+import { compress, decompress } from 'zstdify';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, '../../fixtures');
@@ -24,7 +24,16 @@ describe('zstd corruption handling', () => {
 
   it('rejects checksum mismatch in checked frame', () => {
     const checked = readFixture('level1-check.zst').slice();
-    checked[checked.length - 1] ^= 0x01;
+    const last = checked.length - 1;
+    if (last < 0) throw new Error('Fixture unexpectedly empty');
+    checked[last] = (checked[last] ?? 0) ^ 0x01;
     expect(() => decompress(checked)).toThrowError(/checksum/i);
+  });
+
+  it('rejects frame content-size mismatch', () => {
+    const frame = compress(new TextEncoder().encode('hello')).slice();
+    // Single-segment frame with 1-byte content size at byte 5.
+    frame[5] = ((frame[5] ?? 0) + 1) & 0xff;
+    expect(() => decompress(frame)).toThrowError(/content size/i);
   });
 });

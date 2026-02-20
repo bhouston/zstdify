@@ -3,7 +3,6 @@
  * Zstd FSE streams are read backward.
  */
 
-import { BitReader } from '../bitstream/bitReader.js';
 import type { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
 import { ZstdError } from '../errors.js';
 
@@ -94,26 +93,23 @@ export function decodeFSESymbol(
   return symbol;
 }
 
-/**
- * Read a variable-length packed value (0 to maxVal inclusive) from a forward bitstream.
- * Per zstd FSE Table Description variable bits scheme (Nigel Tao / RFC 8878).
- */
-function readVariablePacked(reader: { readBits(n: number): number }, maxVal: number): number {
-  if (maxVal <= 0) return 0;
-  const maxValInclusive = maxVal;
-  const bitCount = 32 - Math.clz32(maxValInclusive);
-  if (bitCount <= 1) return reader.readBits(1) & 1;
+function readU32LESafe(data: Uint8Array, offset: number): number {
+  return (
+    (data[offset] ?? 0)
+    | ((data[offset + 1] ?? 0) << 8)
+    | ((data[offset + 2] ?? 0) << 16)
+    | ((data[offset + 3] ?? 0) << 24)
+  ) >>> 0;
+}
 
-  const threshold = (1 << bitCount) - 1 - maxValInclusive;
-  const smallBits = bitCount - 1;
-  const lowBits = reader.readBits(smallBits);
+function highbit32(v: number): number {
+  return 31 - Math.clz32(v >>> 0);
+}
 
-  if (lowBits < threshold) {
-    return lowBits;
-  }
-  const highBit = reader.readBits(1);
-  const fullValue = (lowBits << 1) | highBit;
-  return fullValue - threshold;
+function ctz32(v: number): number {
+  const x = v >>> 0;
+  if (x === 0) return 32;
+  return 31 - Math.clz32((x & -x) >>> 0);
 }
 
 /**
@@ -127,78 +123,130 @@ export function readNCount(
   maxSymbolValue: number,
   maxTableLog: number,
 ): { normalizedCounter: number[]; tableLog: number; maxSymbolValue: number; bytesRead: number } {
-  if (offset >= data.length) {
+  const remainingInput = data.length - offset;
+  if (remainingInput <= 0) {
     throw new ZstdError('FSE readNCount: truncated input', 'corruption_detected');
   }
 
-  const reader = new BitReader(data, offset);
-  const low4Bits = reader.readBits(4);
-  const accuracyLog = low4Bits + 5;
-  const tableSize = 1 << accuracyLog;
+  const parseBody = (buf: Uint8Array, hbSize: number) => {
+    const normalizedCounter = new Array<number>(maxSymbolValue + 1).fill(0);
+    let ip = 0;
+    const iend = hbSize;
+    const maxSV1 = maxSymbolValue + 1;
+    let previous0 = false;
+    let charnum = 0;
 
-  if (accuracyLog > maxTableLog) {
-    throw new ZstdError('FSE readNCount: tableLog too large', 'corruption_detected');
-  }
-
-  const normalizedCounter: number[] = [];
-  let remaining = tableSize;
-  let symbol = 0;
-
-  while (remaining > 0) {
-    if (symbol > maxSymbolValue) {
-      throw new ZstdError('FSE readNCount: too many symbols', 'corruption_detected');
+    let bitStream = readU32LESafe(buf, ip);
+    let nbBits = (bitStream & 0x0f) + 5;
+    if (nbBits > maxTableLog) {
+      throw new ZstdError('FSE readNCount: tableLog too large', 'corruption_detected');
     }
+    const tableLog = nbBits;
+    bitStream >>>= 4;
+    let bitCount = 4;
+    let remaining = (1 << nbBits) + 1;
+    let threshold = 1 << nbBits;
+    nbBits += 1;
 
-    const maxRead = remaining + 1;
-    const value = readVariablePacked(reader, maxRead);
-
-    if (value === 0) {
-      normalizedCounter[symbol] = -1;
-      remaining -= 1;
-      symbol++;
-      continue;
-    }
-
-    let n = value - 1;
-    if (n === 0) {
-      let repeat = 0;
-      let r = reader.readBits(2);
-      while (r === 3) {
-        repeat += 3;
-        r = reader.readBits(2);
+    const reload = () => {
+      if (ip <= iend - 7 || ip + (bitCount >> 3) <= iend - 4) {
+        ip += bitCount >> 3;
+        bitCount &= 7;
+      } else {
+        bitCount -= 8 * (iend - 4 - ip);
+        bitCount &= 31;
+        ip = iend - 4;
       }
-      repeat += r;
-      for (let i = 0; i <= repeat; i++) {
-        if (symbol > maxSymbolValue) {
-          throw new ZstdError('FSE readNCount: too many symbols', 'corruption_detected');
+      bitStream = readU32LESafe(buf, ip) >>> bitCount;
+    };
+
+    while (true) {
+      if (previous0) {
+        let repeats = ctz32((~bitStream | 0x80000000) >>> 0) >> 1;
+        while (repeats >= 12) {
+          charnum += 3 * 12;
+          if (ip <= iend - 7) {
+            ip += 3;
+          } else {
+            bitCount -= 8 * (iend - 7 - ip);
+            bitCount &= 31;
+            ip = iend - 4;
+          }
+          bitStream = readU32LESafe(buf, ip) >>> bitCount;
+          repeats = ctz32((~bitStream | 0x80000000) >>> 0) >> 1;
         }
-        normalizedCounter[symbol] = 0;
-        symbol++;
+        charnum += 3 * repeats;
+        bitStream >>>= 2 * repeats;
+        bitCount += 2 * repeats;
+
+        const lastRepeat = bitStream & 3;
+        if (lastRepeat >= 3) {
+          throw new ZstdError('FSE readNCount: invalid zero repeat', 'corruption_detected');
+        }
+        charnum += lastRepeat;
+        bitCount += 2;
+
+        if (charnum >= maxSV1) break;
+        reload();
       }
-      continue;
+
+      const max = (2 * threshold - 1) - remaining;
+      let count: number;
+      if ((bitStream & (threshold - 1)) < max) {
+        count = bitStream & (threshold - 1);
+        bitCount += nbBits - 1;
+      } else {
+        count = bitStream & (2 * threshold - 1);
+        if (count >= threshold) count -= max;
+        bitCount += nbBits;
+      }
+
+      count -= 1;
+      if (count >= 0) {
+        remaining -= count;
+      } else {
+        remaining += count;
+      }
+
+      normalizedCounter[charnum] = count;
+      charnum += 1;
+      previous0 = count === 0;
+
+      if (remaining < threshold) {
+        if (remaining <= 1) break;
+        nbBits = highbit32(remaining) + 1;
+        threshold = 1 << (nbBits - 1);
+      }
+
+      if (charnum >= maxSV1) break;
+      reload();
     }
 
-    if (n > remaining) {
+    if (remaining !== 1) {
       throw new ZstdError('FSE readNCount: invalid probability sum', 'corruption_detected');
     }
+    if (charnum > maxSV1 || bitCount > 32) {
+      throw new ZstdError('FSE readNCount: corrupted header', 'corruption_detected');
+    }
 
-    normalizedCounter[symbol] = n;
-    remaining -= n;
-    symbol++;
-  }
+    ip += (bitCount + 7) >> 3;
+    const outMaxSymbol = charnum - 1;
+    for (let i = charnum; i <= maxSymbolValue; i++) {
+      normalizedCounter[i] = 0;
+    }
 
-  reader.align();
-  const bytesRead = reader.position - offset;
-
-  const maxSymbolValueOut = symbol - 1;
-  for (let i = symbol; i <= maxSymbolValue; i++) {
-    normalizedCounter[i] = 0;
-  }
-
-  return {
-    normalizedCounter,
-    tableLog: accuracyLog,
-    maxSymbolValue: maxSymbolValueOut,
-    bytesRead,
+    return { normalizedCounter, tableLog, maxSymbolValue: outMaxSymbol, bytesRead: ip };
   };
+
+  if (remainingInput < 8) {
+    const scratch = new Uint8Array(8);
+    scratch.set(data.subarray(offset));
+    const parsed = parseBody(scratch, 8);
+    if (parsed.bytesRead > remainingInput) {
+      throw new ZstdError('FSE readNCount: truncated input', 'corruption_detected');
+    }
+    return parsed;
+  }
+
+  return parseBody(data.subarray(offset), remainingInput);
 }

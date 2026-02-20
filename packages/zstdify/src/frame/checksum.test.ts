@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateContentChecksum, xxh64 } from './checksum.js';
+import { computeContentChecksum32, validateContentChecksum, xxh64 } from './checksum.js';
 
 describe('xxh64', () => {
   it('hashes empty input', () => {
@@ -22,5 +22,10 @@ describe('xxh64', () => {
     const low32 = Number(hash & 0xffffffffn);
     expect(validateContentChecksum(data, low32)).toBe(true);
     expect(validateContentChecksum(data, low32 + 1)).toBe(false);
+  });
+
+  it('matches zstd checksum vector', () => {
+    const data = new TextEncoder().encode('checksum interoperability payload');
+    expect(computeContentChecksum32(data)).toBe(0x1be3054d);
   });
 });

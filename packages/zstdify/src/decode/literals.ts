@@ -189,6 +189,12 @@ function decodeHuffmanStream(
   maxNumBits: number,
   numSymbols: number,
 ): Uint8Array {
+  if (numSymbols === 0) {
+    return new Uint8Array(0);
+  }
+  if (streamLength <= 0) {
+    throw new ZstdError('Huffman stream truncated', 'corruption_detected');
+  }
   const result = new Uint8Array(numSymbols);
   const reader = new BitReaderReverse(data, streamOffset, streamLength);
   reader.skipPadding();
@@ -265,14 +271,18 @@ export function decodeCompressedLiterals(
     const stream2Size = s2;
     const stream3Size = s3;
     const stream4Size = totalStreamsSize - 6 - stream1Size - stream2Size - stream3Size;
-    if (stream4Size < 1) {
-      throw new ZstdError('Invalid jump table in 4-stream literals', 'corruption_detected');
+    if (stream4Size < 0) {
+      throw new ZstdError(
+        `Invalid jump table in 4-stream literals: total=${totalStreamsSize} s1=${stream1Size} s2=${stream2Size} s3=${stream3Size}`,
+        'corruption_detected',
+      );
     }
 
     const streamSize = Math.ceil((regeneratedSize + 3) / 4);
     let streamOffset = pos + 6;
 
     const decodeStream = (size: number, count: number) => {
+      if (count === 0) return;
       const lit = decodeHuffmanStream(data, streamOffset, size, huffmanTable.table, huffmanTable.maxNumBits, count);
       result.set(lit, outPos);
       outPos += count;
@@ -328,14 +338,18 @@ export function decodeTreelessLiterals(
     const stream2Size = s2;
     const stream3Size = s3;
     const stream4Size = compressedSize - 6 - stream1Size - stream2Size - stream3Size;
-    if (stream4Size < 1) {
-      throw new ZstdError('Invalid jump table in 4-stream literals', 'corruption_detected');
+    if (stream4Size < 0) {
+      throw new ZstdError(
+        `Invalid jump table in 4-stream literals: total=${compressedSize} s1=${stream1Size} s2=${stream2Size} s3=${stream3Size}`,
+        'corruption_detected',
+      );
     }
 
     const streamSize = Math.ceil((regeneratedSize + 3) / 4);
     pos += 6;
 
     const decodeStream = (size: number, count: number) => {
+      if (count === 0) return;
       const lit = decodeHuffmanStream(data, pos, size, huffmanTable.table, huffmanTable.maxNumBits, count);
       result.set(lit, outPos);
       outPos += count;

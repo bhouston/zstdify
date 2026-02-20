@@ -9,6 +9,7 @@ import { isSkippableFrame, skipSkippableFrame } from './frame/skippable.js';
 
 export type DecompressOptions = {
   maxSize?: number;
+  dictionary?: Uint8Array | { bytes: Uint8Array; id?: number };
 };
 
 export function decompress(input: Uint8Array, options?: DecompressOptions): Uint8Array {
@@ -16,6 +17,9 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
     throw new ZstdError('Empty input', 'corruption_detected');
   }
   const maxSize = options?.maxSize;
+  const dictionary = options?.dictionary;
+  const dictionaryBytes = dictionary instanceof Uint8Array ? dictionary : dictionary?.bytes;
+  const dictionaryId = dictionary instanceof Uint8Array ? null : (dictionary?.id ?? null);
   const chunks: Uint8Array[] = [];
   let offset = 0;
 
@@ -30,14 +34,18 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
     }
 
     const { header } = parseZstdFrame(input, offset);
-    if (header.dictionaryId !== null) {
-      throw new ZstdError('Dictionary frames not supported', 'parameter_unsupported');
+    if (header.dictionaryId !== null && !dictionaryBytes) {
+      throw new ZstdError('Dictionary frame requires dictionary option', 'parameter_unsupported');
+    }
+    if (header.dictionaryId !== null && dictionaryId !== null && dictionaryId !== header.dictionaryId) {
+      throw new ZstdError('Dictionary ID mismatch', 'corruption_detected');
     }
 
     const { output, bytesConsumed } = decompressFrame(
       input,
       offset,
       header,
+      dictionaryBytes,
       maxSize !== undefined ? maxSize - chunks.reduce((s, c) => s + c.length, 0) : undefined,
     );
     chunks.push(output);
