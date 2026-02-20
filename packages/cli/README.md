@@ -5,6 +5,8 @@
 [![Tests][tests-badge]][tests-url]
 [![Coverage][coverage-badge]][coverage-url]
 
+![Zstdify Logo](/logo.webp)
+
 Command-line tool for compressing and decompressing files with zstd. Built on the [zstdify](https://www.npmjs.com/package/zstdify) package (pure TypeScript, no native dependencies).
 
 ## Features
@@ -79,6 +81,11 @@ CLI behavior is covered by automated tests (`pnpm vitest`, including `packages/c
   - `zstdify-cli --dict` compressed streams are decompressed by `zstd -D dict`.
   - Coverage includes both zstd-trained and zstdify-trained dictionaries.
 - **Error paths**: Missing files and invalid inputs produce non-zero exits and actionable messages.
+
+## Acknowledgements
+
+This project is made possible by the original [zstd](https://github.com/facebook/zstd) project by Meta and its contributors.
+The monorepo, project, and CLI structure were bootstrapped from [hdrify](https://github.com/bhouston/hdrify), which made this project much easier to build.
 
 # License
 

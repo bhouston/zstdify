@@ -5,6 +5,8 @@
 [![Tests][tests-badge]][tests-url]
 [![Coverage][coverage-badge]][coverage-url]
 
+![Zstdify Logo](/logo.webp)
+
 Pure JavaScript/TypeScript zstd compression/decompression library. No native dependencies, works in Node.js and browsers.
 
 ## Features
@@ -117,6 +119,11 @@ pnpm make-release:cli
 - `packages/zstdify-tests` - Integration tests
 - `packages/cli` - CLI tool (`zstdify-cli` on npm)
 - `packages/cli-tests` - Tests of the CLI tool
+
+## Acknowledgements
+
+This project is made possible by the original [zstd](https://github.com/facebook/zstd) project by Meta and its contributors.
+The monorepo, project, and CLI structure were bootstrapped from [hdrify](https://github.com/bhouston/hdrify), which made this project much easier to build.
 
 # License
 
