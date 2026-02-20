@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install zstd CLI
+        run: sudo apt-get update && sudo apt-get install -y zstd
+
       - name: Run type check
         run: pnpm tsgo
 
@@ -40,3 +43,6 @@ jobs:
 
       - name: Run tests
         run: pnpm vitest
+
+      - name: Run differential harness (required)
+        run: pnpm vitest packages/zstdify-tests/src/differential/differential.test.ts packages/zstdify-tests/src/interop/zstd-cli-interop.test.ts

@@ -5,7 +5,7 @@ Pure TypeScript zstd compression library. No native dependencies, works in Node.
 ## Status
 
 - **Decoder**: Raw and RLE blocks supported. Compressed blocks (Huffman/FSE) planned.
-- **Encoder**: Raw blocks only (level 0). No compression, produces valid zstd frames.
+- **Encoder**: Raw blocks baseline plus RLE block emission for repeated-byte chunks at `level > 0`. General compressed blocks are still planned.
 - **Format**: RFC 8878 compliant for supported features.
 
 ## Usage

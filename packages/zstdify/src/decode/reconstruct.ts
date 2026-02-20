@@ -19,16 +19,21 @@ export function executeSequences(
   sequences: Sequence[],
   windowSize: number,
   repOffsets: [number, number, number] = [1, 4, 8],
+  history: Uint8Array = new Uint8Array(0),
 ): Uint8Array {
   // Sequence literals are slices of `literals`, so only matches expand output size.
   const totalSize = literals.length + sequences.reduce((s, seq) => s + seq.matchLength, 0);
-  const output = new Uint8Array(totalSize);
-  let outPos = 0;
+  const historyLength = history.length;
+  const buffer = new Uint8Array(historyLength + totalSize);
+  if (historyLength > 0) {
+    buffer.set(history, 0);
+  }
+  let outPos = historyLength;
   let litPos = 0;
 
   for (const seq of sequences) {
     for (let i = 0; i < seq.literalsLength; i++) {
-      output[outPos++] = literals[litPos++] ?? 0;
+      buffer[outPos++] = literals[litPos++] ?? 0;
     }
     const ov = seq.offset; // Offset_Value from sequence decode.
     const ll0 = seq.literalsLength === 0;
@@ -56,7 +61,7 @@ export function executeSequences(
       throw new ZstdError('Invalid match offset', 'corruption_detected');
     }
     for (let i = 0; i < seq.matchLength; i++) {
-      output[outPos] = output[outPos - offset] ?? 0;
+      buffer[outPos] = buffer[outPos - offset] ?? 0;
       outPos++;
     }
     if (isNonRepeat) {
@@ -76,7 +81,7 @@ export function executeSequences(
     }
   }
   while (litPos < literals.length) {
-    output[outPos++] = literals[litPos++] ?? 0;
+    buffer[outPos++] = literals[litPos++] ?? 0;
   }
-  return output;
+  return buffer.subarray(historyLength, outPos).slice();
 }

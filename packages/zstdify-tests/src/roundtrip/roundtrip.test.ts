@@ -36,4 +36,12 @@ describe('roundtrip', () => {
     const decompressed = decompress(compressed);
     expect(decompressed).toEqual(input);
   });
+
+  it('repeated byte input uses level>0 path', () => {
+    const input = new Uint8Array(4096);
+    input.fill(0x61);
+    const compressed = compress(input, { level: 1 });
+    const decompressed = decompress(compressed);
+    expect(decompressed).toEqual(input);
+  });
 });

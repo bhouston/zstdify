@@ -26,7 +26,8 @@ export function decompressFrame(
   let pos = offset + 4 + header.headerSize;
   const chunks: Uint8Array[] = [];
   let totalSize = 0;
-  let repOffsets: [number, number, number] = [1, 4, 8];
+  const repOffsets: [number, number, number] = [1, 4, 8];
+  let history = new Uint8Array(0);
   let prevHuffmanTable: { table: ReturnType<typeof import('../entropy/huffman.js').buildHuffmanDecodeTable>; maxNumBits: number } | null = null;
   let prevSeqTables: SequenceTables | null = null;
 
@@ -41,11 +42,13 @@ export function decompressFrame(
       const literals = decodeRawLiterals(data, pos, block.blockSize);
       chunks.push(literals);
       totalSize += literals.length;
+      history = appendToHistory(history, literals, header.windowSize);
       pos += block.blockSize;
     } else if (block.blockType === 1) {
       const literals = decodeRLELiterals(data, pos, block.blockSize);
       chunks.push(literals);
       totalSize += literals.length;
+      history = appendToHistory(history, literals, header.windowSize);
       pos += 1;
     } else if (block.blockType === 2) {
       const blockContent = data.subarray(pos, pos + block.blockSize);
@@ -97,13 +100,16 @@ export function decompressFrame(
         if (seqResult.sequences.length === 0) {
           output = literals;
         } else {
-          output = executeSequences(literals, seqResult.sequences, header.windowSize, repOffsets);
+          output = executeSequences(literals, seqResult.sequences, header.windowSize, repOffsets, history);
         }
       }
 
       chunks.push(output);
       totalSize += output.length;
+      history = appendToHistory(history, output, header.windowSize);
       pos += block.blockSize;
+    } else {
+      throw new ZstdError('Unsupported block type', 'corruption_detected');
     }
 
     if (maxSize !== undefined && totalSize > maxSize) {
@@ -128,6 +134,23 @@ export function decompressFrame(
 
   const output = concatenateChunks(chunks);
   return { output, bytesConsumed: pos - offset };
+}
+
+function appendToHistory(history: Uint8Array, chunk: Uint8Array, windowSize: number): Uint8Array {
+  if (windowSize <= 0 || chunk.length === 0) {
+    return history;
+  }
+  const maxHistory = Math.max(1, windowSize);
+  if (chunk.length >= maxHistory) {
+    return chunk.subarray(chunk.length - maxHistory).slice();
+  }
+  const keepFromHistory = Math.min(history.length, maxHistory - chunk.length);
+  const next = new Uint8Array(keepFromHistory + chunk.length);
+  if (keepFromHistory > 0) {
+    next.set(history.subarray(history.length - keepFromHistory), 0);
+  }
+  next.set(chunk, keepFromHistory);
+  return next;
 }
 
 function concatenateChunks(chunks: Uint8Array[]): Uint8Array {

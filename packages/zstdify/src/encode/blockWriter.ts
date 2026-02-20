@@ -17,3 +17,13 @@ export function writeRawBlock(data: Uint8Array, offset: number, size: number, la
   result.set(data.subarray(offset, offset + size), 3);
   return result;
 }
+
+export function writeRLEBlock(byte: number, size: number, last: boolean): Uint8Array {
+  const header = new Uint8Array(3);
+  const blockHeader = (last ? 1 : 0) | (1 << 1) | (size << 3);
+  writeU24LE(header, 0, blockHeader);
+  const result = new Uint8Array(4);
+  result.set(header, 0);
+  result[3] = byte & 0xff;
+  return result;
+}
