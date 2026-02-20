@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { compress, decompress } from 'zstdify';
+import { makeSeededPayload } from '../helpers/payloadHelpers.js';
 
 describe('roundtrip', () => {
   it('empty input', () => {
@@ -50,5 +51,21 @@ describe('roundtrip', () => {
     const compressed = compress(input, { level: 3, checksum: true });
     const decompressed = decompress(compressed);
     expect(decompressed).toEqual(input);
+  });
+
+  for (const level of [1, 3, 5, 9] as const) {
+    it(`round-trips seeded 4K payload at level ${level}`, () => {
+      const input = makeSeededPayload(4 * 1024, 0xdecafbad);
+      const compressed = compress(input, { level });
+      const decompressed = decompress(compressed);
+      expect(decompressed).toEqual(input);
+    });
+  }
+
+  it('compress is deterministic (same input and options → same output)', () => {
+    const input = makeSeededPayload(1024, 42);
+    const a = compress(input, { level: 3 });
+    const b = compress(input, { level: 3 });
+    expect(a).toEqual(b);
   });
 });

@@ -41,12 +41,7 @@ describeIfZstd('differential dictionaries: zstd -> zstdify', () => {
       const dictionaryBytes = new TextEncoder().encode(dictionaryText);
       writeFileSync(dictPath, dictionaryText);
 
-      const payloads = [
-        'vertex normal index',
-        'alpha beta gamma',
-        'short',
-        'header vertex texture',
-      ];
+      const payloads = ['vertex normal index', 'alpha beta gamma', 'short', 'header vertex texture'];
 
       for (const text of payloads) {
         const payload = new TextEncoder().encode(text);
@@ -95,19 +90,15 @@ describeIfZstd('differential dictionaries: zstd -> zstdify', () => {
         writeFileSync(samplePath, sampleText);
       }
 
-      const train = spawnSync(
-        'zstd',
-        ['--train', ...samplePaths, '--maxdict=2048', '-o', dictPath, '--quiet'],
-        { encoding: null },
-      );
+      const train = spawnSync('zstd', ['--train', ...samplePaths, '--maxdict=2048', '-o', dictPath, '--quiet'], {
+        encoding: null,
+      });
       if (train.status !== 0) {
         throw new Error(`zstd dictionary training failed: ${train.stderr?.toString() ?? 'unknown error'}`);
       }
 
       const dictionaryBytes = new Uint8Array(readFileSync(dictPath));
-      const payload = new TextEncoder().encode(
-        'offset match literal sequence table',
-      );
+      const payload = new TextEncoder().encode('offset match literal sequence table');
       const encoded = zstdCompressWithDict(payload, dictPath);
 
       expect(zstdDecompressWithDict(encoded, dictPath)).toEqual(payload);

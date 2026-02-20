@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "generator": "generate-corpus.ts",
+  "entries": [
+    {
+      "file": "empty-level-1.zst",
+      "level": -1,
+      "originalSize": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "empty"
+    },
+    {
+      "file": "empty-level-3.zst",
+      "level": -3,
+      "originalSize": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "empty"
+    },
+    {
+      "file": "empty-level-6.zst",
+      "level": -6,
+      "originalSize": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "empty"
+    },
+    {
+      "file": "empty-level-9.zst",
+      "level": -9,
+      "originalSize": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "empty"
+    },
+    {
+      "file": "one-byte-level-1.zst",
+      "level": -1,
+      "originalSize": 1,
+      "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+      "description": "single byte"
+    },
+    {
+      "file": "one-byte-level-3.zst",
+      "level": -3,
+      "originalSize": 1,
+      "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+      "description": "single byte"
+    },
+    {
+      "file": "one-byte-level-6.zst",
+      "level": -6,
+      "originalSize": 1,
+      "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+      "description": "single byte"
+    },
+    {
+      "file": "one-byte-level-9.zst",
+      "level": -9,
+      "originalSize": 1,
+      "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+      "description": "single byte"
+    },
+    {
+      "file": "100b-seed0-level-1.zst",
+      "level": -1,
+      "originalSize": 100,
+      "sha256": "699d406805bdb3a870404e675a972bacf606ae13d80bf30e82fb9f51d24a90a5",
+      "description": "100 bytes seeded random"
+    },
+    {
+      "file": "100b-seed0-level-3.zst",
+      "level": -3,
+      "originalSize": 100,
+      "sha256": "699d406805bdb3a870404e675a972bacf606ae13d80bf30e82fb9f51d24a90a5",
+      "description": "100 bytes seeded random"
+    },
+    {
+      "file": "100b-seed0-level-6.zst",
+      "level": -6,
+      "originalSize": 100,
+      "sha256": "699d406805bdb3a870404e675a972bacf606ae13d80bf30e82fb9f51d24a90a5",
+      "description": "100 bytes seeded random"
+    },
+    {
+      "file": "100b-seed0-level-9.zst",
+      "level": -9,
+      "originalSize": 100,
+      "sha256": "699d406805bdb3a870404e675a972bacf606ae13d80bf30e82fb9f51d24a90a5",
+      "description": "100 bytes seeded random"
+    },
+    {
+      "file": "4k-seed0-level-1.zst",
+      "level": -1,
+      "originalSize": 4096,
+      "sha256": "7896d7578a2033a07cc458061d8a51b26f3e23844795dc0d5cdcd77b320d7942",
+      "description": "4K seeded random"
+    },
+    {
+      "file": "4k-seed0-level-3.zst",
+      "level": -3,
+      "originalSize": 4096,
+      "sha256": "7896d7578a2033a07cc458061d8a51b26f3e23844795dc0d5cdcd77b320d7942",
+      "description": "4K seeded random"
+    },
+    {
+      "file": "4k-seed0-level-6.zst",
+      "level": -6,
+      "originalSize": 4096,
+      "sha256": "7896d7578a2033a07cc458061d8a51b26f3e23844795dc0d5cdcd77b320d7942",
+      "description": "4K seeded random"
+    },
+    {
+      "file": "4k-seed0-level-9.zst",
+      "level": -9,
+      "originalSize": 4096,
+      "sha256": "7896d7578a2033a07cc458061d8a51b26f3e23844795dc0d5cdcd77b320d7942",
+      "description": "4K seeded random"
+    },
+    {
+      "file": "64k-seed0-level-1.zst",
+      "level": -1,
+      "originalSize": 65536,
+      "sha256": "68ea6ba63fa33bdc3b8a95806b1333d265d119e7b49c53b77ae94eb8c36e465a",
+      "description": "64K seeded random"
+    },
+    {
+      "file": "64k-seed0-level-3.zst",
+      "level": -3,
+      "originalSize": 65536,
+      "sha256": "68ea6ba63fa33bdc3b8a95806b1333d265d119e7b49c53b77ae94eb8c36e465a",
+      "description": "64K seeded random"
+    },
+    {
+      "file": "64k-seed0-level-6.zst",
+      "level": -6,
+      "originalSize": 65536,
+      "sha256": "68ea6ba63fa33bdc3b8a95806b1333d265d119e7b49c53b77ae94eb8c36e465a",
+      "description": "64K seeded random"
+    },
+    {
+      "file": "64k-seed0-level-9.zst",
+      "level": -9,
+      "originalSize": 65536,
+      "sha256": "68ea6ba63fa33bdc3b8a95806b1333d265d119e7b49c53b77ae94eb8c36e465a",
+      "description": "64K seeded random"
+    },
+    {
+      "file": "8k-rle-level-1.zst",
+      "level": -1,
+      "originalSize": 8192,
+      "sha256": "dd4e6730520932767ec0a9e33fe19c4ce24399d6eba4ff62f13013c9ed30ef87",
+      "description": "8192 repeated 0x61"
+    },
+    {
+      "file": "8k-rle-level-3.zst",
+      "level": -3,
+      "originalSize": 8192,
+      "sha256": "dd4e6730520932767ec0a9e33fe19c4ce24399d6eba4ff62f13013c9ed30ef87",
+      "description": "8192 repeated 0x61"
+    },
+    {
+      "file": "8k-rle-level-6.zst",
+      "level": -6,
+      "originalSize": 8192,
+      "sha256": "dd4e6730520932767ec0a9e33fe19c4ce24399d6eba4ff62f13013c9ed30ef87",
+      "description": "8192 repeated 0x61"
+    },
+    {
+      "file": "8k-rle-level-9.zst",
+      "level": -9,
+      "originalSize": 8192,
+      "sha256": "dd4e6730520932767ec0a9e33fe19c4ce24399d6eba4ff62f13013c9ed30ef87",
+      "description": "8192 repeated 0x61"
+    },
+    {
+      "file": "100b-seed0-level3-check.zst",
+      "level": 3,
+      "originalSize": 100,
+      "sha256": "699d406805bdb3a870404e675a972bacf606ae13d80bf30e82fb9f51d24a90a5",
+      "description": "100b-seed0 with frame checksum"
+    },
+    {
+      "file": "4k-seed0-level3-check.zst",
+      "level": 3,
+      "originalSize": 4096,
+      "sha256": "7896d7578a2033a07cc458061d8a51b26f3e23844795dc0d5cdcd77b320d7942",
+      "description": "4k-seed0 with frame checksum"
+    }
+  ]
+}

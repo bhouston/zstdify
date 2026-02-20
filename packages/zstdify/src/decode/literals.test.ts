@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BitWriter } from '../bitstream/bitWriter.js';
-import {
-  decodeCompressedLiterals,
-  decodeTreelessLiterals,
-  parseLiteralsSectionHeader,
-} from './literals.js';
+import { decodeCompressedLiterals, decodeTreelessLiterals, parseLiteralsSectionHeader } from './literals.js';
 
 describe('literals header parsing', () => {
   it('parses compressed literals header with bit-accurate layout', () => {

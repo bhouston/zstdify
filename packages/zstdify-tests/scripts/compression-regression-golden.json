@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "empty",
+      "level": 0,
+      "size": 9
+    },
+    {
+      "id": "empty",
+      "level": 1,
+      "size": 9
+    },
+    {
+      "id": "empty",
+      "level": 3,
+      "size": 9
+    },
+    {
+      "id": "1k-seed42",
+      "level": 0,
+      "size": 1034
+    },
+    {
+      "id": "1k-seed42",
+      "level": 1,
+      "size": 1034
+    },
+    {
+      "id": "1k-seed42",
+      "level": 3,
+      "size": 276
+    },
+    {
+      "id": "4k-seed0",
+      "level": 0,
+      "size": 4106
+    },
+    {
+      "id": "4k-seed0",
+      "level": 1,
+      "size": 4106
+    },
+    {
+      "id": "4k-seed0",
+      "level": 3,
+      "size": 276
+    },
+    {
+      "id": "64k-seed123",
+      "level": 0,
+      "size": 65546
+    },
+    {
+      "id": "64k-seed123",
+      "level": 1,
+      "size": 65546
+    },
+    {
+      "id": "64k-seed123",
+      "level": 3,
+      "size": 277
+    }
+  ]
+}

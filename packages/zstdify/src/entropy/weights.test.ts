@@ -18,15 +18,11 @@ describe('weights', () => {
 
   describe('readWeightsFSE', () => {
     it('throws when compressed size < 2', () => {
-      expect(() => readWeightsFSE(new Uint8Array(10), 0, 1)).toThrow(
-        /FSE-compressed weights: need at least 2 bytes/i,
-      );
+      expect(() => readWeightsFSE(new Uint8Array(10), 0, 1)).toThrow(/FSE-compressed weights: need at least 2 bytes/i);
     });
 
     it('throws when input is truncated', () => {
-      expect(() => readWeightsFSE(new Uint8Array([0x00, 0x00]), 0, 5)).toThrow(
-        /FSE-compressed weights truncated/i,
-      );
+      expect(() => readWeightsFSE(new Uint8Array([0x00, 0x00]), 0, 5)).toThrow(/FSE-compressed weights truncated/i);
     });
 
     it('throws when there is no stream after header', () => {

@@ -52,9 +52,7 @@ describe('zstdify API', () => {
     const skippableMagic = new Uint8Array([0x50, 0x2a, 0x4d, 0x18]); // LE
     const skippableSizeBytes = new Uint8Array(4);
     new DataView(skippableSizeBytes.buffer).setUint32(0, skippableSize, true);
-    const combined = new Uint8Array(
-      skippableMagic.length + 4 + skippableSize + zstdFrame.length,
-    );
+    const combined = new Uint8Array(skippableMagic.length + 4 + skippableSize + zstdFrame.length);
     let off = 0;
     combined.set(skippableMagic, off);
     off += 4;
@@ -114,9 +112,7 @@ describe('zstdify API', () => {
 
   it('decompress throws when frame has dictionary ID but no dictionary option', () => {
     // Minimal frame with dictionaryIdFlag=1 and one byte dict ID (0x42)
-    const frame = new Uint8Array([
-      0x28, 0xb5, 0x2f, 0xfd, 0x01, 0x00, 0x42, 0x29, 0x00, 0x00,
-    ]);
+    const frame = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x01, 0x00, 0x42, 0x29, 0x00, 0x00]);
     const hello = new TextEncoder().encode('hello');
     const full = new Uint8Array(frame.length + hello.length);
     full.set(frame);
@@ -131,9 +127,7 @@ describe('zstdify API', () => {
   });
 
   it('decompress throws on dictionary ID mismatch', () => {
-    const frame = new Uint8Array([
-      0x28, 0xb5, 0x2f, 0xfd, 0x01, 0x00, 0x42, 0x29, 0x00, 0x00,
-    ]);
+    const frame = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x01, 0x00, 0x42, 0x29, 0x00, 0x00]);
     const hello = new TextEncoder().encode('hello');
     const full = new Uint8Array(frame.length + hello.length);
     full.set(frame);

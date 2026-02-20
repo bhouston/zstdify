@@ -22,7 +22,9 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
   const dictionaryBytes = dictionary instanceof Uint8Array ? dictionary : dictionary?.bytes;
   const providedDictionaryId = dictionary instanceof Uint8Array ? null : (dictionary?.id ?? null);
   const normalizedDictionary =
-    dictionaryBytes && dictionaryBytes.length > 0 ? normalizeDecoderDictionary(dictionaryBytes, providedDictionaryId) : null;
+    dictionaryBytes && dictionaryBytes.length > 0
+      ? normalizeDecoderDictionary(dictionaryBytes, providedDictionaryId)
+      : null;
   const dictionaryId = normalizedDictionary?.dictionaryId ?? providedDictionaryId;
   const chunks: Uint8Array[] = [];
   let offset = 0;

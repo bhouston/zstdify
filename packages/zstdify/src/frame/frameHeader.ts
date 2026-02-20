@@ -45,13 +45,13 @@ export function parseFrameHeader(data: Uint8Array, offset: number): FrameHeader 
     throw new ZstdError('Reserved bit set in frame header', 'corruption_detected');
   }
 
-  let windowSize: number;
+  let windowSize = 0; // set below: from window descriptor (non-single) or from content size (single)
   let contentSize: number | null = null;
   let headerSize = 1;
 
   // Order per spec: Frame_Header_Descriptor | [Window_Descriptor] | [Dictionary_ID] | [Frame_Content_Size]
   if (singleSegment) {
-    // No Window_Descriptor; next is Dictionary_ID then Frame_Content_Size
+    // No Window_Descriptor; next is Dictionary_ID then Frame_Content_Size; windowSize set from FCS below
   } else {
     if (offset + 1 > data.length) {
       throw new ZstdError('Frame header truncated (window descriptor)', 'corruption_detected');

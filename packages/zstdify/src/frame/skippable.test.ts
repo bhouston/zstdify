@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  getSkippableFrameSize,
-  isSkippableFrame,
-  SKIPPABLE_FRAME_MAGIC,
-  skipSkippableFrame,
-} from './skippable.js';
+import { getSkippableFrameSize, isSkippableFrame, SKIPPABLE_FRAME_MAGIC, skipSkippableFrame } from './skippable.js';
 
 describe('skippable frame', () => {
   it('isSkippableFrame returns false when not enough bytes', () => {

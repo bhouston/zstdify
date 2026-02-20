@@ -47,6 +47,9 @@ jobs:
       - name: Run differential harness (required)
         run: pnpm vitest packages/zstdify-tests/src/differential/differential.test.ts packages/zstdify-tests/src/interop/zstd-cli-interop.test.ts
 
+      - name: Run compression regression check
+        run: pnpm --filter zstdify-tests run regression:compression
+
       - name: Run tests with coverage
         run: pnpm vitest run --coverage
 

@@ -39,9 +39,7 @@ describe('frameHeader', () => {
 
   it('parses single-segment frame with 1-byte content size and checksum', () => {
     // FHD: FCS=0 (1 byte), single=1, checksum=1, dict=0 -> 0x24. Then 1 byte content size = 5
-    const data = new Uint8Array([
-      0x28, 0xb5, 0x2f, 0xfd, 0x24, 0x05,
-    ]);
+    const data = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x24, 0x05]);
     const { header } = parseZstdFrame(data, 0);
     expect(header.singleSegment).toBe(true);
     expect(header.contentSize).toBe(5);
@@ -51,9 +49,7 @@ describe('frameHeader', () => {
 
   it('parses frame with 2-byte content size', () => {
     // FHD: FCS=1 (2 bytes), single=1, dict=0 -> 0x60. Single-segment skips WD, so FCS starts immediately.
-    const data = new Uint8Array([
-      0x28, 0xb5, 0x2f, 0xfd, 0x60, 0x01, 0x00,
-    ]);
+    const data = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x60, 0x01, 0x00]);
     const { header } = parseZstdFrame(data, 0);
     expect(header.singleSegment).toBe(true);
     expect(header.contentSize).toBe(257);
@@ -61,27 +57,21 @@ describe('frameHeader', () => {
 
   it('parses frame with dictionary ID (1 byte)', () => {
     // FHD: FCS=0, single=1, dict=1 -> 0x21. Per spec: [Dict_ID] then [FCS]; so 1 byte dict ID = 42, then 1 byte FCS = 0.
-    const data = new Uint8Array([
-      0x28, 0xb5, 0x2f, 0xfd, 0x21, 0x2a, 0x00,
-    ]);
+    const data = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x21, 0x2a, 0x00]);
     const { header } = parseZstdFrame(data, 0);
     expect(header.dictionaryId).toBe(0x2a);
   });
 
   it('parses frame with dictionary ID 0 as null', () => {
     // dict=1, 1 byte dict ID = 0; per spec dictionary ID 0 means "no dictionary"
-    const data = new Uint8Array([
-      0x28, 0xb5, 0x2f, 0xfd, 0x21, 0x00, 0x00,
-    ]);
+    const data = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x21, 0x00, 0x00]);
     const { header } = parseZstdFrame(data, 0);
     expect(header.dictionaryId).toBe(null);
   });
 
   it('parses frame with 4-byte content size', () => {
     // FHD: bits 7-6=FCS(2)=4 bytes, bit 5=single=1, bits 1-0=dict=0 -> 0xA0. Then 4 bytes LE = 0x10000.
-    const data = new Uint8Array([
-      0x28, 0xb5, 0x2f, 0xfd, 0xa0, 0x00, 0x00, 0x01, 0x00,
-    ]);
+    const data = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0xa0, 0x00, 0x00, 0x01, 0x00]);
     const { header } = parseZstdFrame(data, 0);
     expect(header.contentSize).toBe(0x10000);
     expect(header.headerSize).toBe(5);
@@ -89,9 +79,7 @@ describe('frameHeader', () => {
 
   it('parses frame with 8-byte content size', () => {
     // FHD: bits 7-6=FCS(3)=8 bytes, bit 5=single=1 -> 0xE0. Then 8 bytes LE = 2^32.
-    const data = new Uint8Array([
-      0x28, 0xb5, 0x2f, 0xfd, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-    ]);
+    const data = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
     const { header } = parseZstdFrame(data, 0);
     expect(header.contentSize).toBe(0x1_0000_0000);
     expect(header.headerSize).toBe(9);

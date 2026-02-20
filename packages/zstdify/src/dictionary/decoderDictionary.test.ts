@@ -60,11 +60,9 @@ describe('normalizeDecoderDictionary', () => {
         writeFileSync(samplePath, sampleText);
       }
 
-      const train = spawnSync(
-        'zstd',
-        ['--train', ...samplePaths, '--maxdict=2048', '-o', dictPath, '--quiet'],
-        { encoding: null },
-      );
+      const train = spawnSync('zstd', ['--train', ...samplePaths, '--maxdict=2048', '-o', dictPath, '--quiet'], {
+        encoding: null,
+      });
       if (train.status !== 0) {
         throw new Error(`zstd dictionary training failed: ${train.stderr?.toString() ?? 'unknown error'}`);
       }
