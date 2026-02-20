@@ -440,11 +440,18 @@ function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Ar
 }
 
 export function buildCompressedBlockPayload(literals: Uint8Array, sequences: Sequence[]): Uint8Array | null {
-  const literalsSection =
-    buildSingleSymbolCompressedLiterals(literals) ??
-    buildGeneralCompressedLiterals(literals) ??
-    buildRawLiteralsSection(literals);
-  if (!literalsSection) return null;
+  const literalCandidates = [
+    buildSingleSymbolCompressedLiterals(literals),
+    buildGeneralCompressedLiterals(literals),
+    buildRawLiteralsSection(literals),
+  ].filter((section): section is Uint8Array => section !== null);
+  if (literalCandidates.length === 0) return null;
+  let literalsSection = literalCandidates[0]!;
+  for (const candidate of literalCandidates) {
+    if (candidate.length < literalsSection.length) {
+      literalsSection = candidate;
+    }
+  }
   const seqSection = buildPredefinedSequenceSection(sequences);
   if (!seqSection) return null;
   const out = new Uint8Array(literalsSection.length + seqSection.length);
