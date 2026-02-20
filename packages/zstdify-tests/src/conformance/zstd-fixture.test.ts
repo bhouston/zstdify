@@ -10,63 +10,44 @@ import { decompress } from 'zstdify';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, '../../fixtures');
+const phrase =
+  'hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world ';
+
+function readFixture(name: string): Uint8Array {
+  const fixturePath = path.join(fixturesDir, name);
+  if (!fs.existsSync(fixturePath)) {
+    throw new Error(`Missing fixture ${name}. Regenerate with packages/zstdify-tests/fixtures/README.md commands.`);
+  }
+  return new Uint8Array(fs.readFileSync(fixturePath));
+}
 
 describe('zstd fixture conformance', () => {
   it('decompresses hello.zst from official zstd (no checksum)', () => {
-    const fixturePath = path.join(fixturesDir, 'hello-no-check.zst');
-    if (!fs.existsSync(fixturePath)) {
-      console.warn(
-        'Skipping: run "echo -n hello | zstd -c --no-check > packages/zstdify-tests/fixtures/hello-no-check.zst"',
-      );
-      return;
-    }
-    const compressed = new Uint8Array(fs.readFileSync(fixturePath));
+    const compressed = readFixture('hello-no-check.zst');
     const result = decompress(compressed);
     expect(new TextDecoder().decode(result)).toBe('hello');
   });
 
   it('decompresses level1.zst from official zstd (compressed block)', () => {
-    const fixturePath = path.join(fixturesDir, 'level1.zst');
-    if (!fs.existsSync(fixturePath)) {
-      console.warn(
-        'Skipping: run "echo -n "hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world " | zstd -c --no-check -1 > packages/zstdify-tests/fixtures/level1.zst"',
-      );
-      return;
-    }
-    const compressed = new Uint8Array(fs.readFileSync(fixturePath));
+    const compressed = readFixture('level1.zst');
     const result = decompress(compressed);
-    const expected =
-      'hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world ';
-    expect(new TextDecoder().decode(result)).toBe(expected);
+    expect(new TextDecoder().decode(result)).toBe(phrase);
   });
 
   it('decompresses level3.zst from official zstd (compressed block)', () => {
-    const fixturePath = path.join(fixturesDir, 'level3.zst');
-    if (!fs.existsSync(fixturePath)) {
-      console.warn(
-        'Skipping: run "echo -n "hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world " | zstd -c --no-check -3 > packages/zstdify-tests/fixtures/level3.zst"',
-      );
-      return;
-    }
-    const compressed = new Uint8Array(fs.readFileSync(fixturePath));
+    const compressed = readFixture('level3.zst');
     const result = decompress(compressed);
-    const expected =
-      'hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world ';
-    expect(new TextDecoder().decode(result)).toBe(expected);
+    expect(new TextDecoder().decode(result)).toBe(phrase);
   });
 
   it('decompresses level9.zst from official zstd (compressed block)', () => {
-    const fixturePath = path.join(fixturesDir, 'level9.zst');
-    if (!fs.existsSync(fixturePath)) {
-      console.warn(
-        'Skipping: run "echo -n "hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world " | zstd -c --no-check -9 > packages/zstdify-tests/fixtures/level9.zst"',
-      );
-      return;
-    }
-    const compressed = new Uint8Array(fs.readFileSync(fixturePath));
+    const compressed = readFixture('level9.zst');
     const result = decompress(compressed);
-    const expected =
-      'hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world ';
-    expect(new TextDecoder().decode(result)).toBe(expected);
+    expect(new TextDecoder().decode(result)).toBe(phrase);
+  });
+
+  it('decompresses tiny level3 fixture (compressed block)', () => {
+    const noCheck = readFixture('tiny-level3-no-check.zst');
+    expect(new TextDecoder().decode(decompress(noCheck))).toBe('tiny-payload');
   });
 });
