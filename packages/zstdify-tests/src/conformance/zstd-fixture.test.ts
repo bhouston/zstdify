@@ -39,4 +39,34 @@ describe('zstd fixture conformance', () => {
       'hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world ';
     expect(new TextDecoder().decode(result)).toBe(expected);
   });
+
+  it('decompresses level3.zst from official zstd (compressed block)', () => {
+    const fixturePath = path.join(fixturesDir, 'level3.zst');
+    if (!fs.existsSync(fixturePath)) {
+      console.warn(
+        'Skipping: run "echo -n "hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world " | zstd -c --no-check -3 > packages/zstdify-tests/fixtures/level3.zst"',
+      );
+      return;
+    }
+    const compressed = new Uint8Array(fs.readFileSync(fixturePath));
+    const result = decompress(compressed);
+    const expected =
+      'hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world ';
+    expect(new TextDecoder().decode(result)).toBe(expected);
+  });
+
+  it('decompresses level9.zst from official zstd (compressed block)', () => {
+    const fixturePath = path.join(fixturesDir, 'level9.zst');
+    if (!fs.existsSync(fixturePath)) {
+      console.warn(
+        'Skipping: run "echo -n "hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world " | zstd -c --no-check -9 > packages/zstdify-tests/fixtures/level9.zst"',
+      );
+      return;
+    }
+    const compressed = new Uint8Array(fs.readFileSync(fixturePath));
+    const result = decompress(compressed);
+    const expected =
+      'hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world ';
+    expect(new TextDecoder().decode(result)).toBe(expected);
+  });
 });

@@ -6,7 +6,7 @@ import { ZstdError } from '../errors.js';
 
 export interface Sequence {
   literalsLength: number;
-  offset: number;
+  offset: number; // Offset_Value from sequence decode.
   matchLength: number;
 }
 
@@ -30,19 +30,27 @@ export function executeSequences(
     for (let i = 0; i < seq.literalsLength; i++) {
       output[outPos++] = literals[litPos++] ?? 0;
     }
+    const ov = seq.offset; // Offset_Value from sequence decode.
+    const ll0 = seq.literalsLength === 0;
     let offset: number;
-    const ov = seq.offset;
-    if (ov <= 3) {
-      if (ov === 3 && seq.literalsLength === 0) {
+    let repeatIndex: 0 | 1 | 2 | null = null;
+    const isNonRepeat = ov > 3 || (ov === 3 && ll0);
+    if (isNonRepeat) {
+      if (ov === 3) {
         offset = repOffsets[0] - 1;
         if (offset === 0) {
           throw new ZstdError('Invalid match offset: repeat1-1 is 0', 'corruption_detected');
         }
       } else {
-        offset = repOffsets[ov - 1] ?? 0;
+        offset = ov - 3;
       }
     } else {
-      offset = ov;
+      if (ll0) {
+        repeatIndex = ov === 1 ? 1 : 2;
+      } else {
+        repeatIndex = (ov - 1) as 0 | 1 | 2;
+      }
+      offset = repOffsets[repeatIndex] ?? 0;
     }
     if (offset > outPos || offset > windowSize) {
       throw new ZstdError('Invalid match offset', 'corruption_detected');
@@ -51,20 +59,19 @@ export function executeSequences(
       output[outPos] = output[outPos - offset] ?? 0;
       outPos++;
     }
-    if (ov > 3 || (ov === 3 && seq.literalsLength === 0)) {
+    if (isNonRepeat) {
       repOffsets[2] = repOffsets[1];
       repOffsets[1] = repOffsets[0];
       repOffsets[0] = offset;
     } else {
-      const used = repOffsets[ov - 1] ?? 0;
-      if (ov === 1) {
-      } else if (ov === 2) {
+      // Move the used repeated offset to the front.
+      if (repeatIndex === 1) {
         repOffsets[1] = repOffsets[0];
-        repOffsets[0] = used;
-      } else {
+        repOffsets[0] = offset;
+      } else if (repeatIndex === 2) {
         repOffsets[2] = repOffsets[1];
         repOffsets[1] = repOffsets[0];
-        repOffsets[0] = used;
+        repOffsets[0] = offset;
       }
     }
   }

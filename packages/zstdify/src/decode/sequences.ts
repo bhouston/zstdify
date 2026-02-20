@@ -7,7 +7,6 @@ import { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
 import { ZstdError } from '../errors.js';
 import {
   buildFSEDecodeTable,
-  decodeFSESymbol,
   type FSEDecodeRow,
   readNCount,
 } from '../entropy/fse.js';
@@ -62,12 +61,12 @@ export interface DecodeSequencesResult {
   bytesRead: number;
 }
 
-function symbolFromState(table: readonly FSEDecodeRow[], stateValue: number): number {
+function getStateRow(table: readonly FSEDecodeRow[], stateValue: number): FSEDecodeRow {
   const row = table[stateValue];
   if (!row) {
     throw new ZstdError('FSE invalid state', 'corruption_detected');
   }
-  return row.symbol;
+  return row;
 }
 
 function buildRLETable(symbol: number, tableLog: number): FSEDecodeRow[] {
@@ -227,6 +226,7 @@ export function decodeSequences(
   }
   const reader = new BitReaderReverse(bitstream, 0, bitstreamSize);
   reader.skipPadding();
+  // Initial states are read in LL, OF, ML order.
   const stateLL = { value: reader.readBits(llTableLog) };
   const stateOF = { value: reader.readBits(ofTableLog) };
   const stateML = { value: reader.readBits(mlTableLog) };
@@ -235,17 +235,15 @@ export function decodeSequences(
 
   for (let i = 0; i < numSequences; i++) {
     const isLast = i === numSequences - 1;
-    const offsetCode = isLast ? symbolFromState(ofTable, stateOF.value) : decodeFSESymbol(ofTable, ofTableLog, reader, stateOF);
-    const mlCode = isLast ? symbolFromState(mlTable, stateML.value) : decodeFSESymbol(mlTable, mlTableLog, reader, stateML);
-    const llCode = isLast ? symbolFromState(llTable, stateLL.value) : decodeFSESymbol(llTable, llTableLog, reader, stateLL);
+    // Per spec, sequence tuple decode order is OF, ML, LL.
+    const ofRow = getStateRow(ofTable, stateOF.value);
+    const mlRow = getStateRow(mlTable, stateML.value);
+    const llRow = getStateRow(llTable, stateLL.value);
+    const offsetCode = ofRow.symbol;
+    const mlCode = mlRow.symbol;
+    const llCode = llRow.symbol;
 
-    let offsetValue: number;
-    if (offsetCode <= 3) {
-      offsetValue = offsetCode;
-    } else {
-      const extraBits = reader.readBits(offsetCode);
-      offsetValue = (1 << offsetCode) + extraBits;
-    }
+    const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? reader.readBits(offsetCode) : 0);
 
     const matchLength = mlCode <= 31
       ? mlCode + 3
@@ -257,12 +255,18 @@ export function decodeSequences(
 
     sequences.push({
       literalsLength,
-      offset: offsetValue <= 3 ? offsetValue : offsetValue - 3,
+      offset: offsetValue,
       matchLength,
     });
+
+    if (!isLast) {
+      // State updates for next sequence are LL, ML, OF.
+      stateLL.value = llRow.baseline + (llRow.numBits > 0 ? reader.readBits(llRow.numBits) : 0);
+      stateML.value = mlRow.baseline + (mlRow.numBits > 0 ? reader.readBits(mlRow.numBits) : 0);
+      stateOF.value = ofRow.baseline + (ofRow.numBits > 0 ? reader.readBits(ofRow.numBits) : 0);
+    }
   }
 
-  sequences.reverse();
   return {
     sequences,
     tables: { llTable, llTableLog, ofTable, ofTableLog, mlTable, mlTableLog },

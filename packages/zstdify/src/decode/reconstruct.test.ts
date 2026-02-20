@@ -7,7 +7,7 @@ describe('executeSequences', () => {
     const sequences: Sequence[] = [
       {
         literalsLength: 4, // "abcd"
-        offset: 4, // copy "ab" from start
+        offset: 7, // offsetValue 7 => actual offset 4
         matchLength: 2,
       },
     ];
