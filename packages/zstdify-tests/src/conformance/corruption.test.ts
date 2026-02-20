@@ -36,4 +36,33 @@ describe('zstd corruption handling', () => {
     frame[5] = ((frame[5] ?? 0) + 1) & 0xff;
     expect(() => decompress(frame)).toThrowError(/content size/i);
   });
+
+  it('rejects frame header truncated', () => {
+    // Magic (4 bytes) + only 1 byte of header; parseFrameHeader needs at least 2
+    const buf = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x00]);
+    expect(() => decompress(buf)).toThrowError(/frame header truncated/i);
+  });
+
+  it('rejects unused bit set in frame header', () => {
+    // FHD with bit 4 (0x10) set is unused
+    const buf = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x10, 0x00]);
+    expect(() => decompress(buf)).toThrowError(/unused bit/i);
+  });
+
+  it('rejects reserved bit set in frame header', () => {
+    // FHD with bit 3 (0x08) set is reserved
+    const buf = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x08, 0x00]);
+    expect(() => decompress(buf)).toThrowError(/reserved bit/i);
+  });
+
+  it('rejects block header truncated', () => {
+    // Valid magic + FHD(0) + WD(0) = 6 bytes; no block header (need 3 more)
+    const buf = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x00]);
+    expect(() => decompress(buf)).toThrowError(/block header truncated/i);
+  });
+
+  it('rejects when decompressed size exceeds maxSize', () => {
+    const compressed = compress(new TextEncoder().encode('hello'));
+    expect(() => decompress(compressed, { maxSize: 1 })).toThrowError(/maxSize|exceeds/i);
+  });
 });

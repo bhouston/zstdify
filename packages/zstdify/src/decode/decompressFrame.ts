@@ -3,6 +3,7 @@
  */
 
 import { readU32LE } from '../bitstream/littleEndian.js';
+import type { DecoderDictionaryContext } from '../dictionary/decoderDictionary.js';
 import { ZstdError } from '../errors.js';
 import { validateContentChecksum } from '../frame/checksum.js';
 import type { FrameHeader } from '../frame/frameHeader.js';
@@ -21,22 +22,24 @@ export function decompressFrame(
   data: Uint8Array,
   offset: number,
   header: FrameHeader,
-  dictionaryContent?: Uint8Array,
+  dictionary?: DecoderDictionaryContext | null,
   maxSize?: number,
 ): { output: Uint8Array; bytesConsumed: number } {
   let pos = offset + 4 + header.headerSize;
   const chunks: Uint8Array[] = [];
   let totalSize = 0;
-  const repOffsets: [number, number, number] = [1, 4, 8];
+  const repOffsets: [number, number, number] = dictionary?.repOffsets
+    ? [dictionary.repOffsets[0], dictionary.repOffsets[1], dictionary.repOffsets[2]]
+    : [1, 4, 8];
   let history: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
-  if (dictionaryContent && dictionaryContent.length > 0) {
-    history = dictionaryContent.slice();
+  if (dictionary?.historyPrefix && dictionary.historyPrefix.length > 0) {
+    history = dictionary.historyPrefix.slice();
   }
   let prevHuffmanTable: {
     table: ReturnType<typeof import('../entropy/huffman.js').buildHuffmanDecodeTable>;
     maxNumBits: number;
-  } | null = null;
-  let prevSeqTables: SequenceTables | null = null;
+  } | null = dictionary?.huffmanTable ?? null;
+  let prevSeqTables: SequenceTables | null = dictionary?.sequenceTables ?? null;
 
   while (true) {
     if (pos + 3 > data.length) {

@@ -9,6 +9,7 @@
     "check": "biome check --write",
     "tsgo": "pnpm -r tsgo",
     "test": "pnpm vitest",
+    "coverage": "vitest run --coverage",
     "lint": "pnpm biome check",
     "make-release:zstdify": "node scripts/make-release.ts packages/zstdify",
     "make-release:cli": "node scripts/make-release.ts packages/cli"

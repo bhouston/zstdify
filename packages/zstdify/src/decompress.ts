@@ -3,6 +3,7 @@
  */
 
 import { decompressFrame } from './decode/decompressFrame.js';
+import { normalizeDecoderDictionary } from './dictionary/decoderDictionary.js';
 import { ZstdError } from './errors.js';
 import { parseZstdFrame } from './frame/frameHeader.js';
 import { isSkippableFrame, skipSkippableFrame } from './frame/skippable.js';
@@ -19,7 +20,10 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
   const maxSize = options?.maxSize;
   const dictionary = options?.dictionary;
   const dictionaryBytes = dictionary instanceof Uint8Array ? dictionary : dictionary?.bytes;
-  const dictionaryId = dictionary instanceof Uint8Array ? null : (dictionary?.id ?? null);
+  const providedDictionaryId = dictionary instanceof Uint8Array ? null : (dictionary?.id ?? null);
+  const normalizedDictionary =
+    dictionaryBytes && dictionaryBytes.length > 0 ? normalizeDecoderDictionary(dictionaryBytes, providedDictionaryId) : null;
+  const dictionaryId = normalizedDictionary?.dictionaryId ?? providedDictionaryId;
   const chunks: Uint8Array[] = [];
   let offset = 0;
 
@@ -45,7 +49,7 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
       input,
       offset,
       header,
-      dictionaryBytes,
+      normalizedDictionary,
       maxSize !== undefined ? maxSize - chunks.reduce((s, c) => s + c.length, 0) : undefined,
     );
     chunks.push(output);

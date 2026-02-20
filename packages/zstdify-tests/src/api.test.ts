@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { compress, decompress } from 'zstdify';
 
+function assertZstdError(e: unknown): asserts e is { name: string; code: string; message: string } {
+  expect(e).toBeInstanceOf(Error);
+  expect((e as Error).name).toBe('ZstdError');
+  expect((e as { code?: string }).code).toBeDefined();
+}
+
 describe('zstdify API', () => {
   it('compress produces valid zstd frame', () => {
     const input = new TextEncoder().encode('hello');
@@ -13,6 +19,58 @@ describe('zstdify API', () => {
   it('decompress rejects invalid magic', () => {
     const input = new Uint8Array([0, 0, 0, 0]);
     expect(() => decompress(input)).toThrow();
+  });
+
+  it('decompress throws ZstdError on empty input', () => {
+    expect(() => decompress(new Uint8Array(0))).toThrow();
+    try {
+      decompress(new Uint8Array(0));
+    } catch (e) {
+      assertZstdError(e);
+      expect(e.message).toMatch(/empty input/i);
+      expect(e.code).toBe('corruption_detected');
+    }
+  });
+
+  it('decompress throws on truncated input (too short for magic)', () => {
+    for (const len of [1, 2, 3]) {
+      expect(() => decompress(new Uint8Array(len))).toThrow();
+    }
+    try {
+      decompress(new Uint8Array(3));
+    } catch (e) {
+      assertZstdError(e);
+      expect(e.message).toMatch(/truncated|invalid magic/i);
+    }
+  });
+
+  it('decompress skips skippable frame then decodes zstd frame', () => {
+    // Build: skippable frame (magic 0x184D2A50 LE + 4-byte size LE + payload) then zstd frame
+    const zstdFrame = compress(new TextEncoder().encode('hello'));
+    const skippableSize = 4; // 4 bytes of payload
+    const skippablePayload = new Uint8Array([0x01, 0x02, 0x03, 0x04]);
+    const skippableMagic = new Uint8Array([0x50, 0x2a, 0x4d, 0x18]); // LE
+    const skippableSizeBytes = new Uint8Array(4);
+    new DataView(skippableSizeBytes.buffer).setUint32(0, skippableSize, true);
+    const combined = new Uint8Array(
+      skippableMagic.length + 4 + skippableSize + zstdFrame.length,
+    );
+    let off = 0;
+    combined.set(skippableMagic, off);
+    off += 4;
+    combined.set(skippableSizeBytes, off);
+    off += 4;
+    combined.set(skippablePayload, off);
+    off += skippableSize;
+    combined.set(zstdFrame, off);
+    const result = decompress(combined);
+    expect(new TextDecoder().decode(result)).toBe('hello');
+  });
+
+  it('decompress throws on truncated skippable frame header', () => {
+    // Only 4 bytes (skippable magic); getSkippableFrameSize needs 8
+    const skippableMagicOnly = new Uint8Array([0x50, 0x2a, 0x4d, 0x18]);
+    expect(() => decompress(skippableMagicOnly)).toThrow(/skippable|truncated/i);
   });
 
   it('decompress decodes raw block frame', () => {
