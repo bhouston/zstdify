@@ -46,7 +46,9 @@ describe('corpus manifest conformance (decompress robustness)', () => {
 
   if (!manifest) {
     it('corpus manifest is required', () => {
-      expect(fs.existsSync(manifestPath), `Missing required ${manifestPath}. Corpus fixtures must be committed.`).toBe(true);
+      expect(fs.existsSync(manifestPath), `Missing required ${manifestPath}. Corpus fixtures must be committed.`).toBe(
+        true,
+      );
     });
     return;
   }

@@ -19,6 +19,24 @@ describe('literals header parsing', () => {
     expect(header.headerSize).toBe(3);
     expect(dataOffset).toBe(3);
   });
+
+  it('parses raw literals header with sizeFormat=3', () => {
+    const data = new Uint8Array([0x5c, 0x32, 0x00]); // blockType=0, sizeFormat=3, regeneratedSize=0x325
+    const { header, dataOffset } = parseLiteralsSectionHeader(data, 0);
+    expect(header.blockType).toBe(0);
+    expect(header.regeneratedSize).toBe(0x325);
+    expect(header.headerSize).toBe(3);
+    expect(dataOffset).toBe(3);
+  });
+
+  it('parses RLE literals header with sizeFormat=3', () => {
+    const data = new Uint8Array([0xad, 0x01, 0x00]); // blockType=1, sizeFormat=3, regeneratedSize=0x1a
+    const { header, dataOffset } = parseLiteralsSectionHeader(data, 0);
+    expect(header.blockType).toBe(1);
+    expect(header.regeneratedSize).toBe(0x1a);
+    expect(header.headerSize).toBe(3);
+    expect(dataOffset).toBe(3);
+  });
 });
 
 describe('decodeCompressedLiterals', () => {

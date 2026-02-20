@@ -37,4 +37,50 @@ describe('literals corruption handling', () => {
       /4-stream mode requires at least 10 bytes/i,
     );
   });
+
+  it('rejects compressed literals 4-stream jump table with negative stream4', () => {
+    const data = new Uint8Array([
+      129,
+      0x10, // tree
+      0x0a,
+      0x00, // s1 = 10
+      0x0a,
+      0x00, // s2 = 10
+      0x0a,
+      0x00, // s3 = 10
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+    ]);
+    expect(() => decodeCompressedLiterals(data, 0, 12, 4, 4)).toThrowError(/Invalid jump table/i);
+  });
+
+  it('rejects treeless literals 4-stream jump table with negative stream4', () => {
+    const table = decodeCompressedLiterals(new Uint8Array([129, 0x10, 0x02]), 0, 3, 1, 1).huffmanTable;
+    const data = new Uint8Array([0x0a, 0x00, 0x0a, 0x00, 0x0a, 0x00, 0x01, 0x01, 0x01, 0x01]);
+    expect(() => decodeTreelessLiterals(data, 0, 10, 4, 4, table)).toThrowError(/Invalid jump table/i);
+  });
+
+  it('rejects Huffman stream with invalid end marker in 4-stream treeless mode', () => {
+    const table = decodeCompressedLiterals(new Uint8Array([129, 0x10, 0x02]), 0, 3, 1, 1).huffmanTable;
+    // Jump table: 1,1,1 and stream4=1. First stream byte is 0x00 => invalid end marker.
+    const data = new Uint8Array([0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x01]);
+    expect(() => decodeTreelessLiterals(data, 0, 10, 4, 4, table)).toThrowError(/invalid end marker/i);
+  });
+
+  it('rejects malformed Huffman stream termination in 4-stream treeless mode', () => {
+    const malformedTable: Parameters<typeof decodeTreelessLiterals>[5] = {
+      table: [{ symbol: 0, numBits: 2 } as { symbol: number; numBits: number }],
+      maxNumBits: 2,
+    };
+    const data = new Uint8Array([0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x01, 0x01, 0x01]);
+    expect(() => decodeTreelessLiterals(data, 0, 10, 4, 4, malformedTable)).toThrowError(/did not end cleanly/i);
+  });
 });

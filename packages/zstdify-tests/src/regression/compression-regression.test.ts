@@ -41,8 +41,8 @@ describe('compression regression', () => {
         expect(g, `Golden entry for ${id} level ${level}`).toBeDefined();
         expect(
           out.length,
-          `Regression: ${id} level ${level} size ${out.length} > golden ${g!.size}`,
-        ).toBeLessThanOrEqual(g!.size);
+          `Regression: ${id} level ${level} size ${out.length} > golden ${g?.size}`,
+        ).toBeLessThanOrEqual(g?.size ?? 0);
       }
     }
   });
