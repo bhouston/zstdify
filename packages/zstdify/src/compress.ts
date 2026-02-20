@@ -6,6 +6,7 @@
 import { writeRawBlock } from './encode/blockWriter.js';
 import { writeRLEBlock } from './encode/blockWriter.js';
 import { writeFrameHeader } from './encode/frameWriter.js';
+import { buildGreedySequences } from './encode/greedySequences.js';
 
 export type CompressOptions = {
   level?: number;
@@ -26,6 +27,7 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   while (offset < input.length || blockIndex < blockCount) {
     const size = Math.min(BLOCK_MAX, input.length - offset);
     const last = blockIndex === blockCount - 1;
+    const block = input.subarray(offset, offset + size);
     if (level > 0 && size > 0) {
       const first = input[offset] ?? 0;
       let isRLE = true;
@@ -38,6 +40,17 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
       if (isRLE) {
         chunks.push(writeRLEBlock(first, size, last));
       } else {
+        if (level > 1) {
+          const plan = buildGreedySequences(block);
+          // Phase E scaffolding: detect compressible blocks now; emit compressed
+          // blocks once sequence/literals entropy emitters are implemented.
+          if (plan.sequences.length > 0) {
+            chunks.push(writeRawBlock(input, offset, size, last));
+            offset += size;
+            blockIndex++;
+            continue;
+          }
+        }
         chunks.push(writeRawBlock(input, offset, size, last));
       }
     } else {
