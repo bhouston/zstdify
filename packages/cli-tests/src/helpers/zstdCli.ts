@@ -5,6 +5,14 @@ export function hasZstdCli(): boolean {
   return result.status === 0;
 }
 
+export function requireZstdCli(): void {
+  if (!hasZstdCli()) {
+    throw new Error(
+      'zstd CLI is required for interop/differential tests. Please install zstd and ensure it is available on PATH.',
+    );
+  }
+}
+
 export function zstdCompress(input: Uint8Array, args: string[] = []): Uint8Array {
   const result = spawnSync('zstd', ['-q', '-c', ...args], {
     input: Buffer.from(input),

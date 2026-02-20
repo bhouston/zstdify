@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { hasZstdCli, zstdCompress, zstdDecompress } from '../helpers/zstdCli.js';
+import { requireZstdCli, zstdCompress, zstdDecompress } from '../helpers/zstdCli.js';
 import { createTempDir, runCli } from '../test-utils/cliTestEnv.js';
 
 describe('CLI round-trip', () => {
@@ -52,10 +52,8 @@ describe('CLI round-trip', () => {
   });
 });
 
-const hasZstd = hasZstdCli();
-const describeIfZstd = hasZstd ? describe : describe.skip;
-
-describeIfZstd('CLI round-trip with zstd CLI', () => {
+describe('CLI round-trip with zstd CLI', () => {
+  requireZstdCli();
   let tempDir: string;
 
   beforeEach(() => {

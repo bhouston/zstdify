@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { decompress } from 'zstdify';
 import { makeBinaryPayload } from '../helpers/payloadHelpers.js';
-import { hasZstdCli, zstdCompress } from '../helpers/zstdCli.js';
+import { requireZstdCli, zstdCompress } from '../helpers/zstdCli.js';
 
-const hasZstd = hasZstdCli();
-const describeIfZstd = hasZstd ? describe : describe.skip;
-
-describeIfZstd('differential: zstd -> zstdify', () => {
+describe('differential: zstd -> zstdify', () => {
+  requireZstdCli();
   const corpus: Array<{ name: string; data: Uint8Array }> = [
     { name: 'empty', data: new Uint8Array(0) },
     {

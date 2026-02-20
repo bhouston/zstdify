@@ -18,25 +18,44 @@ export const command = defineCommand({
         describe: 'Output file path',
         type: 'string',
         demandOption: true,
+      })
+      .option('dict', {
+        describe: 'Dictionary file path for dictionary-compressed input',
+        type: 'string',
+      })
+      .option('dictID', {
+        describe: 'Expected dictionary ID for validation',
+        type: 'number',
       }),
   handler: async (argv) => {
-    const { input, output } = argv;
+    const { input, output, dict, dictID } = argv;
 
     if (!fs.existsSync(input)) {
       console.error(`Error: Input file not found: ${input}`);
+      process.exit(1);
+    }
+    if (dict && !fs.existsSync(dict)) {
+      console.error(`Error: Dictionary file not found: ${dict}`);
       process.exit(1);
     }
 
     try {
       const inputBuf = fs.readFileSync(input);
       const data = new Uint8Array(inputBuf.buffer, inputBuf.byteOffset, inputBuf.byteLength);
+      const dictionary = dict
+        ? (() => {
+            const dictBuf = fs.readFileSync(dict);
+            const bytes = new Uint8Array(dictBuf.buffer, dictBuf.byteOffset, dictBuf.byteLength);
+            return dictID !== undefined ? { bytes, id: dictID } : bytes;
+          })()
+        : undefined;
 
       const outDir = path.dirname(output);
       if (outDir) {
         fs.mkdirSync(outDir, { recursive: true });
       }
 
-      const result = decompress(data);
+      const result = decompress(data, dictionary ? { dictionary } : undefined);
       fs.writeFileSync(output, result);
       console.log(`Decompressed ${input} -> ${output}`);
     } catch (error) {

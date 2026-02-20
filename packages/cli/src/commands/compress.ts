@@ -28,18 +28,42 @@ export const command = defineCommand({
         describe: 'Add content checksum to the frame',
         type: 'boolean',
         default: false,
+      })
+      .option('dict', {
+        describe: 'Dictionary file path to use for compression',
+        type: 'string',
+      })
+      .option('dictID', {
+        describe: 'Dictionary ID to store in frame header',
+        type: 'number',
+      })
+      .option('noDictId', {
+        describe: "Don't write dictID into frame header",
+        type: 'boolean',
+        default: false,
       }),
   handler: async (argv) => {
-    const { input, output, level, checksum } = argv;
+    const { input, output, level, checksum, dict, dictID, noDictId } = argv;
 
     if (!fs.existsSync(input)) {
       console.error(`Error: Input file not found: ${input}`);
+      process.exit(1);
+    }
+    if (dict && !fs.existsSync(dict)) {
+      console.error(`Error: Dictionary file not found: ${dict}`);
       process.exit(1);
     }
 
     try {
       const inputBuf = fs.readFileSync(input);
       const data = new Uint8Array(inputBuf.buffer, inputBuf.byteOffset, inputBuf.byteLength);
+      const dictionary = dict
+        ? (() => {
+            const dictBuf = fs.readFileSync(dict);
+            const bytes = new Uint8Array(dictBuf.buffer, dictBuf.byteOffset, dictBuf.byteLength);
+            return dictID !== undefined ? { bytes, id: dictID } : bytes;
+          })()
+        : undefined;
 
       const outDir = path.dirname(output);
       if (outDir) {
@@ -49,6 +73,8 @@ export const command = defineCommand({
       const result = compress(data, {
         level,
         checksum,
+        dictionary,
+        noDictId,
       });
       fs.writeFileSync(output, result);
       console.log(`Compressed ${input} -> ${output}`);

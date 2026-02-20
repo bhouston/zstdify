@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compress } from 'zstdify';
-import { hasZstdCli, zstdDecompress } from '../helpers/zstdCli.js';
-
-const hasZstd = hasZstdCli();
-const describeIfZstd = hasZstd ? describe : describe.skip;
+import { requireZstdCli, zstdDecompress } from '../helpers/zstdCli.js';
 
 function makeSeededPayload(size: number, seed: number): Uint8Array {
   const data = new Uint8Array(size);
@@ -15,7 +12,8 @@ function makeSeededPayload(size: number, seed: number): Uint8Array {
   return data;
 }
 
-describeIfZstd('interop: zstdify -> zstd', () => {
+describe('interop: zstdify -> zstd', () => {
+  requireZstdCli();
   it('zstd CLI can decode zstdify output', () => {
     const input = new TextEncoder().encode('hello world from zstdify');
     const encoded = compress(input);

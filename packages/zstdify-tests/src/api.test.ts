@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compress, decompress } from 'zstdify';
+import { compress, decompress, generateDictionary } from 'zstdify';
 
 function assertZstdError(e: unknown): asserts e is { name: string; code: string; message: string } {
   expect(e).toBeInstanceOf(Error);
@@ -108,6 +108,33 @@ describe('zstdify API', () => {
     const compressed = compress(payload);
     const result = decompress(compressed, { dictionary: { bytes: dictBytes } });
     expect(new TextDecoder().decode(result)).toBe('alpha beta');
+  });
+
+  it('compress writes dictionary ID when dictionary metadata is provided', () => {
+    const dictionary = generateDictionary(
+      [
+        new TextEncoder().encode('alpha beta gamma delta'),
+        new TextEncoder().encode('header vertex texture normal index'),
+      ],
+      { maxDictSize: 1024 },
+    );
+    const payload = new TextEncoder().encode('alpha beta gamma header vertex texture');
+    const compressed = compress(payload, { dictionary: { bytes: dictionary, id: 42 } });
+    expect(() => decompress(compressed)).toThrow(/dictionary/i);
+    expect(decompress(compressed, { dictionary: { bytes: dictionary, id: 42 } })).toEqual(payload);
+  });
+
+  it('compress supports noDictId mode', () => {
+    const dictionary = generateDictionary(
+      [
+        new TextEncoder().encode('offset match literal sequence table'),
+        new TextEncoder().encode('repeat mode huffman fse decode'),
+      ],
+      { maxDictSize: 1024 },
+    );
+    const payload = new TextEncoder().encode('offset match literal sequence table');
+    const compressed = compress(payload, { dictionary: { bytes: dictionary, id: 101 }, noDictId: true });
+    expect(decompress(compressed)).toEqual(payload);
   });
 
   it('decompress throws when frame has dictionary ID but no dictionary option', () => {

@@ -19,6 +19,10 @@ Pure JavaScript/TypeScript zstd compression/decompression library. No native dep
   - Raw blocks, RLE blocks, and compressed blocks.
   - Compression-level driven behavior with automatic raw fallback when compressed output is not smaller.
   - Optional frame content checksums.
+  - Optional dictionary-aware frame headers (`dictID`) for dictionary workflows.
+- **Dictionary generation**:
+  - Pure TypeScript dictionary training from sample payloads.
+  - Zstd-inspired training options (`fastcover`/`cover`/`legacy` style knobs).
 - **Interop-focused**: `zstdify` output is decoded by the official `zstd` CLI, and `zstd` CLI output is decoded by `zstdify`.
 - **Extensively tested**:
   - Round-trip and property-based tests.
@@ -39,8 +43,29 @@ const restored = decompress(compressed);
 
 ## API
 
-- `compress(input: Uint8Array, options?: { level?: number; checksum?: boolean }): Uint8Array`
+- `compress(input: Uint8Array, options?: { level?: number; checksum?: boolean; dictionary?: Uint8Array | { bytes: Uint8Array; id?: number }; noDictId?: boolean }): Uint8Array`
 - `decompress(input: Uint8Array, options?: { maxSize?: number; dictionary?: Uint8Array | { bytes: Uint8Array; id?: number } }): Uint8Array`
+- `generateDictionary(samples: Uint8Array[], options?: { maxDictSize?: number; dictId?: number; algorithm?: "fastcover" | "cover" | "legacy"; k?: number; d?: number; steps?: number; split?: number; f?: number; accel?: number; selectivity?: number; shrink?: boolean | number }): Uint8Array`
+
+Dictionary generation outputs a raw-content dictionary. If you want a specific `dictID` written into compressed frames, pass it to `compress()` via `dictionary: { bytes, id }`.
+
+### Dictionary workflow example
+
+```ts
+import { compress, decompress, generateDictionary } from 'zstdify';
+
+const encoder = new TextEncoder();
+const samples = [
+  encoder.encode('alpha beta gamma delta'),
+  encoder.encode('header vertex texture normal index'),
+  encoder.encode('offset match literal sequence table'),
+];
+const dictionary = generateDictionary(samples, { maxDictSize: 2048, algorithm: 'fastcover' });
+
+const payload = encoder.encode('header vertex texture offset match literal');
+const compressed = compress(payload, { dictionary: { bytes: dictionary, id: 42 } });
+const restored = decompress(compressed, { dictionary: { bytes: dictionary, id: 42 } });
+```
 
 ## CLI Tool
 
@@ -72,7 +97,7 @@ All of the following run as part of the test suite (`pnpm test` / `pnpm vitest`)
 
 - **Round-trip**: `decompress(compress(x)) === x` for a variety of payloads and levels, plus property-based tests with [fast-check](https://fast-check.dev/).
 - **Conformance fixtures**: Pre-generated `.zst` files from the official zstd CLI (legacy fixtures and a committed decodecorpus-style **corpus** with manifest); we decompress and compare. See [packages/zstdify-tests/fixtures/README.md](packages/zstdify-tests/fixtures/README.md).
-- **Differential (zstd ↔ zstdify)**: When the zstd CLI is installed, we test zstd compress → zstdify decompress and zstdify compress → zstd decompress across payloads and levels.
+- **Differential (zstd ↔ zstdify)**: We test zstd compress → zstdify decompress and zstdify compress → zstd decompress across payloads and levels.
 - **Corruption**: Truncation, checksum mismatch, invalid header bits, and related error paths.
 - **Compression regression**: Compressed sizes for fixed payloads are checked against golden values (ratio stability).
 - **Decompress robustness**: Each corpus fixture is decompressed in its own test (one test per file), so the suite tracks decompress behavior per input. See [upstream zstd TESTING.md](https://github.com/facebook/zstd/blob/dev/TESTING.md) for comparison.

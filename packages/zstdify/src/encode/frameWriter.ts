@@ -4,7 +4,28 @@
 
 const ZSTD_MAGIC = 0xfd2fb528;
 
-export function writeFrameHeader(contentSize: number, hasChecksum: boolean): Uint8Array {
+function writeDictionaryId(chunks: number[], dictionaryId: number): void {
+  if (dictionaryId <= 0xff) {
+    chunks.push(dictionaryId & 0xff);
+    return;
+  }
+  if (dictionaryId <= 0xffff) {
+    chunks.push(dictionaryId & 0xff, (dictionaryId >>> 8) & 0xff);
+    return;
+  }
+  chunks.push(
+    dictionaryId & 0xff,
+    (dictionaryId >>> 8) & 0xff,
+    (dictionaryId >>> 16) & 0xff,
+    (dictionaryId >>> 24) & 0xff,
+  );
+}
+
+export function writeFrameHeader(
+  contentSize: number,
+  hasChecksum: boolean,
+  dictionaryId: number | null = null,
+): Uint8Array {
   const chunks: number[] = [];
   chunks.push(ZSTD_MAGIC & 0xff, (ZSTD_MAGIC >> 8) & 0xff, (ZSTD_MAGIC >> 16) & 0xff, (ZSTD_MAGIC >> 24) & 0xff);
 
@@ -19,8 +40,20 @@ export function writeFrameHeader(contentSize: number, hasChecksum: boolean): Uin
     fhd |= 2 << 6;
     fhd |= 1 << 5;
   }
+  if (dictionaryId !== null) {
+    if (!Number.isInteger(dictionaryId) || dictionaryId <= 0 || dictionaryId > 0xffff_ffff) {
+      throw new Error('Invalid dictionaryId in frame header');
+    }
+    if (dictionaryId <= 0xff) fhd |= 1;
+    else if (dictionaryId <= 0xffff) fhd |= 2;
+    else fhd |= 3;
+  }
   fhd |= (hasChecksum ? 1 : 0) << 2;
   chunks.push(fhd);
+
+  if (dictionaryId !== null) {
+    writeDictionaryId(chunks, dictionaryId >>> 0);
+  }
 
   if (contentSize <= 255) {
     chunks.push(contentSize & 0xff);

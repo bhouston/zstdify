@@ -39,4 +39,21 @@ describe('frameWriter', () => {
     const h = writeFrameHeader(5, true);
     expect(h[4]).toBe((1 << 5) | (1 << 2));
   });
+
+  it('writeFrameHeader writes 1-byte dictionary id when provided', () => {
+    const h = writeFrameHeader(5, false, 42);
+    expect(h[4]).toBe((1 << 5) | 1);
+    expect(h[5]).toBe(42);
+    expect(h[6]).toBe(5);
+  });
+
+  it('writeFrameHeader writes 4-byte dictionary id when provided', () => {
+    const h = writeFrameHeader(5, false, 0x1234_5678);
+    expect(h[4]).toBe((1 << 5) | 3);
+    expect(h[5]).toBe(0x78);
+    expect(h[6]).toBe(0x56);
+    expect(h[7]).toBe(0x34);
+    expect(h[8]).toBe(0x12);
+    expect(h[9]).toBe(5);
+  });
 });

@@ -4,10 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decompress } from 'zstdify';
-import { hasZstdCli, zstdCompress, zstdDecompress } from '../helpers/zstdCli.js';
-
-const hasZstd = hasZstdCli();
-const describeIfZstd = hasZstd ? describe : describe.skip;
+import { requireZstdCli, zstdCompress, zstdDecompress } from '../helpers/zstdCli.js';
 
 function makeProblemPayload(size: number): Uint8Array {
   const data = new Uint8Array(size);
@@ -20,7 +17,8 @@ function makeProblemPayload(size: number): Uint8Array {
   return data;
 }
 
-describeIfZstd('differential known failures: zstd -> zstdify', () => {
+describe('differential known failures: zstd -> zstdify', () => {
+  requireZstdCli();
   const input = makeProblemPayload(123_912);
 
   it('decodes a valid zstd stream at level -1', () => {

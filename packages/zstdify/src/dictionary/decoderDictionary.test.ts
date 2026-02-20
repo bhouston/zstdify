@@ -10,6 +10,14 @@ function hasZstdCli(): boolean {
   return result.status === 0;
 }
 
+function requireZstdCli(): void {
+  if (!hasZstdCli()) {
+    throw new Error(
+      'zstd CLI is required for dictionary parser interop tests. Please install zstd and ensure it is available on PATH.',
+    );
+  }
+}
+
 describe('normalizeDecoderDictionary', () => {
   it('keeps raw-content dictionary bytes as history prefix', () => {
     const dictionaryBytes = new TextEncoder().encode('alpha beta gamma dictionary content');
@@ -36,8 +44,8 @@ describe('normalizeDecoderDictionary', () => {
     expect(() => normalizeDecoderDictionary(malformed)).toThrow();
   });
 
-  it('parses trained dictionary metadata and content when zstd cli is available', () => {
-    if (!hasZstdCli()) return;
+  it('parses trained dictionary metadata and content using zstd cli', () => {
+    requireZstdCli();
     const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-parse-'));
     try {
       const dictPath = join(tempRoot, 'trained.dict');

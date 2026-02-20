@@ -3,15 +3,19 @@
  * Level 0: raw blocks only (no compression, fast).
  */
 
+import { normalizeDecoderDictionary } from './dictionary/decoderDictionary.js';
 import { writeRawBlock, writeRLEBlock } from './encode/blockWriter.js';
 import { buildCompressedBlockPayload, writeCompressedBlock } from './encode/compressedBlock.js';
 import { writeFrameHeader } from './encode/frameWriter.js';
 import { buildGreedySequences } from './encode/greedySequences.js';
+import { ZstdError } from './errors.js';
 import { computeContentChecksum32 } from './frame/checksum.js';
 
 export type CompressOptions = {
   level?: number;
   checksum?: boolean;
+  dictionary?: Uint8Array | { bytes: Uint8Array; id?: number };
+  noDictId?: boolean;
 };
 
 const BLOCK_MAX = 128 * 1024;
@@ -19,9 +23,20 @@ const BLOCK_MAX = 128 * 1024;
 export function compress(input: Uint8Array, options?: CompressOptions): Uint8Array {
   const level = options?.level ?? 0;
   const hasChecksum = options?.checksum ?? false;
+  const dictionary = options?.dictionary;
+  const dictionaryBytes = dictionary instanceof Uint8Array ? dictionary : dictionary?.bytes;
+  const providedDictionaryId = dictionary instanceof Uint8Array ? null : (dictionary?.id ?? null);
+  const normalizedDictionary =
+    dictionaryBytes && dictionaryBytes.length > 0
+      ? normalizeDecoderDictionary(dictionaryBytes, providedDictionaryId)
+      : null;
+  const dictionaryId = options?.noDictId ? null : (normalizedDictionary?.dictionaryId ?? providedDictionaryId);
+  if (dictionaryId !== null && (!Number.isInteger(dictionaryId) || dictionaryId <= 0 || dictionaryId > 0xffff_ffff)) {
+    throw new ZstdError('dictionary.id must be a 32-bit positive integer', 'parameter_unsupported');
+  }
   const chunks: Uint8Array[] = [];
 
-  chunks.push(writeFrameHeader(input.length, hasChecksum));
+  chunks.push(writeFrameHeader(input.length, hasChecksum, dictionaryId));
 
   let offset = 0;
   const blockCount = input.length === 0 ? 1 : Math.ceil(input.length / BLOCK_MAX);
