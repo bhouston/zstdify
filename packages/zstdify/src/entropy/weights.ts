@@ -3,9 +3,8 @@
  * Weights can be FSE-compressed or direct (4 bits per weight).
  */
 
-import { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
 import { ZstdError } from '../errors.js';
-import { buildFSEDecodeTable, decodeFSESymbol, readNCount } from './fse.js';
+import { buildFSEDecodeTable, readNCount } from './fse.js';
 
 /**
  * Read Huffman weights from direct representation (headerByte >= 128).
@@ -68,37 +67,54 @@ export function readWeightsFSE(
   }
 
   const stream = header.subarray(streamStart, streamStart + streamLength);
-  const reader = new BitReaderReverse(stream, 0, streamLength);
-  reader.skipPadding();
+  const lastByte = stream[stream.length - 1] ?? 0;
+  if (lastByte === 0) {
+    throw new ZstdError('FSE-compressed weights: invalid end marker', 'corruption_detected');
+  }
+  const highestSetBit = 31 - Math.clz32(lastByte);
+  const paddingBits = 8 - highestSetBit;
+  let bitOffset = streamLength * 8 - paddingBits;
+
+  const readBitsZeroExtended = (numBits: number): number => {
+    if (numBits <= 0) return 0;
+    bitOffset -= numBits;
+    let value = 0;
+    for (let i = 0; i < numBits; i++) {
+      const abs = bitOffset + i;
+      if (abs < 0) continue;
+      const byteIndex = abs >>> 3;
+      const bitInByte = abs & 7;
+      const bit = ((stream[byteIndex] ?? 0) >>> bitInByte) & 1;
+      value |= bit << i;
+    }
+    return value;
+  };
 
   const weights: number[] = [];
-  let state1: { value: number };
-  let state2: { value: number };
-
-  try {
-    state1 = { value: reader.readBits(tableLog) };
-    state2 = { value: reader.readBits(tableLog) };
-  } catch {
-    throw new ZstdError('FSE-compressed weights: truncated initial states', 'corruption_detected');
-  }
+  const state1 = { value: readBitsZeroExtended(tableLog) };
+  const state2 = { value: readBitsZeroExtended(tableLog) };
 
   while (weights.length < 255) {
-    try {
-      const sym1 = decodeFSESymbol(table, tableLog, reader, state1);
-      weights.push(sym1);
-    } catch {
+    const row1 = table[state1.value];
+    if (!row1) throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
+    weights.push(row1.symbol);
+    state1.value = row1.baseline + readBitsZeroExtended(row1.numBits);
+    if (bitOffset < 0) {
       const tail = table[state2.value];
-      if (tail) weights.push(tail.symbol);
+      if (!tail) throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
+      weights.push(tail.symbol);
       break;
     }
     if (weights.length >= 255) break;
 
-    try {
-      const sym2 = decodeFSESymbol(table, tableLog, reader, state2);
-      weights.push(sym2);
-    } catch {
+    const row2 = table[state2.value];
+    if (!row2) throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
+    weights.push(row2.symbol);
+    state2.value = row2.baseline + readBitsZeroExtended(row2.numBits);
+    if (bitOffset < 0) {
       const tail = table[state1.value];
-      if (tail) weights.push(tail.symbol);
+      if (!tail) throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
+      weights.push(tail.symbol);
       break;
     }
   }

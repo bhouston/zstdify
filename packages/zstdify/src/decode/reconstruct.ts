@@ -60,7 +60,10 @@ export function executeSequences(
     const produced = outPos - historyLength;
     const maxReachBack = produced <= windowSize ? produced + historyLength : windowSize;
     if (offset <= 0 || offset > maxReachBack) {
-      throw new ZstdError('Invalid match offset', 'corruption_detected');
+      throw new ZstdError(
+        `Invalid match offset: offset=${offset} maxReachBack=${maxReachBack} produced=${produced} history=${historyLength} window=${windowSize}`,
+        'corruption_detected',
+      );
     }
     for (let i = 0; i < seq.matchLength; i++) {
       buffer[outPos] = buffer[outPos - offset] ?? 0;

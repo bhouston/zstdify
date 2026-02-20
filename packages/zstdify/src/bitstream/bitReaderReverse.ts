@@ -28,14 +28,15 @@ export class BitReaderReverse {
       throw new RangeError(`BitReaderReverse.readBits: n must be 1-32, got ${n}`);
     }
 
-    this.bitOffset -= n;
-    if (this.bitOffset < this.startBit) {
-      throw new RangeError('BitReaderReverse: buffer underflow');
-    }
+    const requestedStart = this.bitOffset - n;
+    this.bitOffset = Math.max(this.startBit, requestedStart);
 
     let value = 0;
     for (let i = 0; i < n; i++) {
-      const absoluteBit = this.bitOffset + i;
+      const absoluteBit = requestedStart + i;
+      if (absoluteBit < this.startBit) {
+        continue;
+      }
       const byteIndex = absoluteBit >>> 3;
       const bitInByte = absoluteBit & 7;
       const bit = ((this.data[byteIndex] ?? 0) >>> bitInByte) & 1;
@@ -75,6 +76,15 @@ export class BitReaderReverse {
     this.bitOffset -= n;
     if (this.bitOffset < this.startBit) {
       throw new RangeError('BitReaderReverse: buffer underflow');
+    }
+  }
+
+  /** Undo a previous readBits() by pushing the cursor forward. */
+  unreadBits(n: number): void {
+    if (n <= 0) return;
+    this.bitOffset += n;
+    if (this.bitOffset > this.endBit) {
+      throw new RangeError('BitReaderReverse: unread overflow');
     }
   }
 }

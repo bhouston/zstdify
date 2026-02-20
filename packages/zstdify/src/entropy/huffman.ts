@@ -32,29 +32,34 @@ export function weightsToNumBits(weights: readonly number[], maxNumBits: number)
 export function buildHuffmanDecodeTable(numBits: readonly number[], maxNumBits: number): HuffmanDecodeRow[] {
   const tableSize = 1 << maxNumBits;
   const table: HuffmanDecodeRow[] = new Array(tableSize);
-
-  const codes: { symbol: number; len: number }[] = [];
+  const rankCount = new Array<number>(maxNumBits + 1).fill(0);
   for (let s = 0; s < numBits.length; s++) {
     const len = numBits[s] ?? 0;
-    if (len > 0) codes.push({ symbol: s, len });
+    if (len < 0 || len > maxNumBits) {
+      throw new ZstdError('Huffman invalid bit length', 'corruption_detected');
+    }
+    rankCount[len] = (rankCount[len] ?? 0) + 1;
   }
 
-  codes.sort((a, b) => a.len - b.len || a.symbol - b.symbol);
+  const rankIdx = new Array<number>(maxNumBits + 1).fill(0);
+  rankIdx[maxNumBits] = 0;
+  for (let len = maxNumBits; len >= 1; len--) {
+    const current = rankIdx[len] ?? 0;
+    rankIdx[len - 1] = current + (rankCount[len] ?? 0) * (1 << (maxNumBits - len));
+  }
+  if (rankIdx[0] !== tableSize) {
+    throw new ZstdError('Huffman invalid tree', 'corruption_detected');
+  }
 
-  let code = 0;
-  let lastLen = 0;
-  for (const { symbol, len } of codes) {
-    code <<= len - lastLen;
-    const tableMask = (1 << len) - 1;
-    const step = 1 << (maxNumBits - len);
-    for (let i = code; i < tableSize; i += step) {
-      for (let j = 0; j < step; j++) {
-        const idx = (i + j) & tableMask;
-        if (idx < tableSize) table[idx] = { symbol, numBits: len };
-      }
+  for (let symbol = 0; symbol < numBits.length; symbol++) {
+    const len = numBits[symbol] ?? 0;
+    if (len === 0) continue;
+    const code = rankIdx[len] ?? 0;
+    const span = 1 << (maxNumBits - len);
+    for (let i = 0; i < span; i++) {
+      table[code + i] = { symbol, numBits: len };
     }
-    code++;
-    lastLen = len;
+    rankIdx[len] = code + span;
   }
 
   return table;
@@ -71,5 +76,9 @@ export function decodeHuffmanSymbol(
   const peek = reader.readBits(maxNumBits);
   const row = table[peek];
   if (!row) throw new ZstdError('Huffman invalid code', 'corruption_detected');
+  const unread = maxNumBits - row.numBits;
+  if (unread > 0) {
+    reader.unreadBits(unread);
+  }
   return row.symbol;
 }

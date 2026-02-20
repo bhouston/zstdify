@@ -17,6 +17,18 @@ describe('FSE', () => {
     expect(result.normalizedCounter[1]).toBe(16);
     expect(result.bytesRead).toBe(2);
   });
+
+  it('readNCount matches short-buffer and padded-buffer parsing', () => {
+    const short = new Uint8Array([0x10, 0x3f, 0x01]);
+    const padded = new Uint8Array([0x10, 0x3f, 0x01, 0, 0, 0, 0, 0]);
+    const a = readNCount(short, 0, 255, 12);
+    const b = readNCount(padded, 0, 255, 12);
+    expect(a.tableLog).toBe(b.tableLog);
+    expect(a.maxSymbolValue).toBe(b.maxSymbolValue);
+    expect(a.bytesRead).toBe(2);
+    expect(b.bytesRead).toBe(2);
+    expect(a.normalizedCounter.slice(0, 8)).toEqual(b.normalizedCounter.slice(0, 8));
+  });
   it('buildFSEDecodeTable from predefined literals length', () => {
     const table = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
     expect(table.length).toBe(1 << LITERALS_LENGTH_TABLE_LOG);

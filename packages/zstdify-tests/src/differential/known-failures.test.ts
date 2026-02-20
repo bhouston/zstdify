@@ -47,7 +47,7 @@ describeIfZstd('differential known failures: zstd -> zstdify', () => {
       writeFileSync(dictPath, dictionaryText);
 
       const payload = new TextEncoder().encode(
-        'vertex vertex normal index alpha beta gamma dictionary compatibility test',
+        'vertex normal index',
       );
       const encodedWithDict = spawnSync('zstd', ['-q', '-c', '-D', dictPath, '--no-check'], {
         input: Buffer.from(payload),
