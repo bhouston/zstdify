@@ -6,9 +6,6 @@
   "scripts": {
     "test": "vitest",
     "tsgo": "tsc --noEmit",
-    "generate:corpus": "node scripts/generate-corpus.ts",
-    "regression:compression": "node scripts/compression-regression.ts",
-    "fuzz:decompress": "node scripts/fuzz-decompress.ts"
   },
   "devDependencies": {
     "@types/node": "^24",

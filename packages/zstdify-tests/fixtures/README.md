@@ -4,13 +4,7 @@ All binary fixtures in this folder are generated with the official `zstd` CLI.
 
 ## Corpus fixtures (decodecorpus-style)
 
-The `corpus/` subdirectory holds a batch of `.zst` files plus `manifest.json` (sha256 of original content) for decoder conformance. Regenerate from repo root (requires zstd CLI):
-
-```bash
-pnpm --filter zstdify-tests run generate:corpus
-```
-
-Tests in `conformance/corpus-manifest.test.ts` decompress each corpus file and verify the hash matches the manifest.
+The `corpus/` subdirectory holds a batch of `.zst` files plus `manifest.json` (sha256 of original content) for decoder conformance. The corpus is committed; the test suite verifies it in `conformance/corpus-manifest.test.ts`. To regenerate (optional, requires zstd CLI), from `packages/zstdify-tests` run: `node scripts/generate-corpus.ts`.
 
 ## Legacy fixtures (root of fixtures/)
 
