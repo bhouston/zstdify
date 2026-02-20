@@ -67,4 +67,38 @@ describe('frameHeader', () => {
     const { header } = parseZstdFrame(data, 0);
     expect(header.dictionaryId).toBe(0x2a);
   });
+
+  it('parses frame with dictionary ID 0 as null', () => {
+    // dict=1, 1 byte dict ID = 0; per spec dictionary ID 0 means "no dictionary"
+    const data = new Uint8Array([
+      0x28, 0xb5, 0x2f, 0xfd, 0x21, 0x00, 0x00,
+    ]);
+    const { header } = parseZstdFrame(data, 0);
+    expect(header.dictionaryId).toBe(null);
+  });
+
+  it('parses frame with 4-byte content size', () => {
+    // FHD: bits 7-6=FCS(2)=4 bytes, bit 5=single=1, bits 1-0=dict=0 -> 0xA0. Then 4 bytes LE = 0x10000.
+    const data = new Uint8Array([
+      0x28, 0xb5, 0x2f, 0xfd, 0xa0, 0x00, 0x00, 0x01, 0x00,
+    ]);
+    const { header } = parseZstdFrame(data, 0);
+    expect(header.contentSize).toBe(0x10000);
+    expect(header.headerSize).toBe(5);
+  });
+
+  it('parses frame with 8-byte content size', () => {
+    // FHD: bits 7-6=FCS(3)=8 bytes, bit 5=single=1 -> 0xE0. Then 8 bytes LE = 2^32.
+    const data = new Uint8Array([
+      0x28, 0xb5, 0x2f, 0xfd, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    ]);
+    const { header } = parseZstdFrame(data, 0);
+    expect(header.contentSize).toBe(0x1_0000_0000);
+    expect(header.headerSize).toBe(9);
+  });
+
+  it('rejects input too short for magic', () => {
+    const data = new Uint8Array([0x28, 0xb5, 0x2f]);
+    expect(() => parseZstdFrame(data, 0)).toThrow(/too short|magic/i);
+  });
 });

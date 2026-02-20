@@ -149,4 +149,15 @@ describe('zstdify API', () => {
       expect(e.code).toBe('corruption_detected');
     }
   });
+
+  it('decompress returns empty when stream contains only skippable frame(s)', () => {
+    // Single skippable frame: magic (4) + size LE (4) + payload; size=0 -> 8 bytes total, no zstd frame
+    const skippableMagic = new Uint8Array([0x50, 0x2a, 0x4d, 0x18]);
+    const sizeBytes = new Uint8Array(4); // size = 0
+    const skippableOnly = new Uint8Array(8);
+    skippableOnly.set(skippableMagic, 0);
+    skippableOnly.set(sizeBytes, 4);
+    const result = decompress(skippableOnly);
+    expect(result).toEqual(new Uint8Array(0));
+  });
 });
