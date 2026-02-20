@@ -1,0 +1,23 @@
+{
+  "name": "zstdify",
+  "description": "Pure TypeScript zstd compression library",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "keywords": ["zstd", "compression", "decompression", "rfc8878"],
+  "scripts": {
+    "build": "tsgo",
+    "dev": "tsgo --watch",
+    "tsgo": "tsgo",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": ["dist"]
+}
