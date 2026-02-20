@@ -125,13 +125,6 @@ function main() {
   }
   cpSync(readmePath, join(publishPath, 'README.md'));
 
-  console.log(`Copying logo.webp from root`);
-  const logoPath = join(rootPath, 'logo.webp');
-  if (!existsSync(logoPath)) {
-    throw new Error(`Error: logo.webp not found at ${logoPath}`);
-  }
-  cpSync(logoPath, join(publishPath, 'logo.webp'));
-
   console.log(`Publishing package`);
   execSync('npm publish ./publish/ --access public', {
     cwd: resolvedPackagePath,

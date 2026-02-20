@@ -5,7 +5,7 @@
 [![Tests][tests-badge]][tests-url]
 [![Coverage][coverage-badge]][coverage-url]
 
-![Zstdify Logo](/logo.webp)
+![Zstdify Logo](https://raw.githubusercontent.com/bhouston/zstdify/main/logo.webp)
 
 Command-line tool for compressing and decompressing files with zstd. Built on the [zstdify](https://www.npmjs.com/package/zstdify) package (pure TypeScript, no native dependencies).
 

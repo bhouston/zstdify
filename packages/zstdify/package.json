@@ -5,6 +5,30 @@
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "sideEffects": false,
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
+        },
+        "./compress": {
+            "types": "./dist/compress.d.ts",
+            "import": "./dist/compress.js",
+            "default": "./dist/compress.js"
+        },
+        "./decompress": {
+            "types": "./dist/decompress.d.ts",
+            "import": "./dist/decompress.js",
+            "default": "./dist/decompress.js"
+        },
+        "./dictionary": {
+            "types": "./dist/dictionary/generateDictionary.d.ts",
+            "import": "./dist/dictionary/generateDictionary.js",
+            "default": "./dist/dictionary/generateDictionary.js"
+        },
+        "./package.json": "./package.json"
+    },
     "license": "MIT",
     "keywords": [
         "zstd",

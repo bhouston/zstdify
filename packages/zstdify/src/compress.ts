@@ -3,7 +3,7 @@
  * Level 0: raw blocks only (no compression, fast).
  */
 
-import { normalizeDecoderDictionary } from './dictionary/decoderDictionary.js';
+import { resolveDictionaryIdForCompression } from './dictionary/compressorDictionary.js';
 import { writeRawBlock, writeRLEBlock } from './encode/blockWriter.js';
 import { buildCompressedBlockPayload, writeCompressedBlock } from './encode/compressedBlock.js';
 import { writeFrameHeader } from './encode/frameWriter.js';
@@ -26,11 +26,11 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   const dictionary = options?.dictionary;
   const dictionaryBytes = dictionary instanceof Uint8Array ? dictionary : dictionary?.bytes;
   const providedDictionaryId = dictionary instanceof Uint8Array ? null : (dictionary?.id ?? null);
-  const normalizedDictionary =
-    dictionaryBytes && dictionaryBytes.length > 0
-      ? normalizeDecoderDictionary(dictionaryBytes, providedDictionaryId)
-      : null;
-  const dictionaryId = options?.noDictId ? null : (normalizedDictionary?.dictionaryId ?? providedDictionaryId);
+  const dictionaryId = options?.noDictId
+    ? null
+    : dictionaryBytes && dictionaryBytes.length > 0
+      ? resolveDictionaryIdForCompression(dictionaryBytes, providedDictionaryId)
+      : providedDictionaryId;
   if (dictionaryId !== null && (!Number.isInteger(dictionaryId) || dictionaryId <= 0 || dictionaryId > 0xffff_ffff)) {
     throw new ZstdError('dictionary.id must be a 32-bit positive integer', 'parameter_unsupported');
   }

@@ -84,6 +84,9 @@ importers:
       vitest:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@24.10.13)
+      zstddec:
+        specifier: ^0.2.0
+        version: 0.2.0
       zstdify:
         specifier: workspace:*
         version: link:../zstdify
@@ -968,6 +971,9 @@ packages:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
     engines: {node: '>=12'}
 
+  zstddec@0.2.0:
+    resolution: {integrity: sha512-oyPnDa1X5c13+Y7mA/FDMNJrn4S8UNBe0KCqtDmor40Re7ALrPN6npFwyYVRRh+PqozZQdeg23QtbcamZnG5rA==}
+
 snapshots:
 
   '@ampproject/remapping@2.3.0':
@@ -1726,3 +1732,5 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
+
+  zstddec@0.2.0: {}
