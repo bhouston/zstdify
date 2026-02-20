@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { decompress } from 'zstdify';
 import { defineCommand } from 'yargs-file-commands';
+import { decompress } from 'zstdify';
 
 export const command = defineCommand({
   command: 'extract <input> <output>',

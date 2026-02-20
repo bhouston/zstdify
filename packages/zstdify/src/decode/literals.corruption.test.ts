@@ -24,6 +24,8 @@ describe('literals corruption handling', () => {
 
   it('rejects invalid compressed literals size', () => {
     const data = new Uint8Array([0x80]); // direct weights header with 1 weight; no stream payload
-    expect(() => decodeCompressedLiterals(data, 0, 1, 16, 1)).toThrowError(/truncated|Invalid literals compressed size/i);
+    expect(() => decodeCompressedLiterals(data, 0, 1, 16, 1)).toThrowError(
+      /truncated|Invalid literals compressed size/i,
+    );
   });
 });

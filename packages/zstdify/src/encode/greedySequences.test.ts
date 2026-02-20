@@ -4,9 +4,7 @@ import { buildGreedySequences } from './greedySequences.js';
 
 describe('buildGreedySequences', () => {
   it('reconstructs repetitive text via generated sequences', () => {
-    const input = new TextEncoder().encode(
-      'hello world hello world hello world hello world hello world ',
-    );
+    const input = new TextEncoder().encode('hello world hello world hello world hello world hello world ');
     const plan = buildGreedySequences(input);
     const output = executeSequences(plan.literals, plan.sequences, 128 * 1024);
     expect(output).toEqual(input);

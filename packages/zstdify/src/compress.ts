@@ -3,8 +3,7 @@
  * Level 0: raw blocks only (no compression, fast).
  */
 
-import { writeRawBlock } from './encode/blockWriter.js';
-import { writeRLEBlock } from './encode/blockWriter.js';
+import { writeRawBlock, writeRLEBlock } from './encode/blockWriter.js';
 import { buildCompressedBlockPayload, writeCompressedBlock } from './encode/compressedBlock.js';
 import { writeFrameHeader } from './encode/frameWriter.js';
 import { buildGreedySequences } from './encode/greedySequences.js';
@@ -71,12 +70,7 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   if (hasChecksum) {
     const checksum = computeContentChecksum32(input);
     chunks.push(
-      new Uint8Array([
-        checksum & 0xff,
-        (checksum >>> 8) & 0xff,
-        (checksum >>> 16) & 0xff,
-        (checksum >>> 24) & 0xff,
-      ]),
+      new Uint8Array([checksum & 0xff, (checksum >>> 8) & 0xff, (checksum >>> 16) & 0xff, (checksum >>> 24) & 0xff]),
     );
   }
 

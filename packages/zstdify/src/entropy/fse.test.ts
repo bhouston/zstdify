@@ -5,12 +5,7 @@ import { LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG } from 
 
 describe('FSE', () => {
   it('readNCount decodes 2-symbol distribution', () => {
-    const result = readNCount(
-      new Uint8Array([0x10, 0x3f, 0x01]),
-      0,
-      255,
-      12,
-    );
+    const result = readNCount(new Uint8Array([0x10, 0x3f, 0x01]), 0, 255, 12);
     expect(result.tableLog).toBe(5);
     expect(result.maxSymbolValue).toBe(1);
     expect(result.normalizedCounter[0]).toBe(16);

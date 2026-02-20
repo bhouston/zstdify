@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { compress } from 'zstdify';
 import { defineCommand } from 'yargs-file-commands';
+import { compress } from 'zstdify';
 
 export const command = defineCommand({
   command: 'compress <input> <output>',

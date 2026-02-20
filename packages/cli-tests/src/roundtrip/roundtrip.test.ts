@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { hasZstdCli, zstdCompress, zstdDecompress } from '../helpers/zstdCli.js';
 import { createTempDir, runCli } from '../test-utils/cliTestEnv.js';
-import { hasZstdCli, zstdDecompress, zstdCompress } from '../helpers/zstdCli.js';
 
 describe('CLI round-trip', () => {
   let tempDir: string;

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseFrameHeader } from '../frame/frameHeader.js';
 import { parseBlockHeader } from './block.js';
-import { parseLiteralsSectionHeader, decodeRawLiterals } from './literals.js';
+import { decodeRawLiterals, parseLiteralsSectionHeader } from './literals.js';
 import { executeSequences } from './reconstruct.js';
 import { decodeSequences } from './sequences.js';
 

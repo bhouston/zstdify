@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { compress } from '../compress.js';
+import { parseLiteralsSectionHeader } from '../decode/literals.js';
 import { decompress } from '../decompress.js';
 import { parseFrameHeader } from '../frame/frameHeader.js';
-import { parseLiteralsSectionHeader } from '../decode/literals.js';
-import { buildGreedySequences } from './greedySequences.js';
 import { buildCompressedBlockPayload, writeCompressedBlock } from './compressedBlock.js';
-import { compress } from '../compress.js';
+import { buildGreedySequences } from './greedySequences.js';
 
 describe('compressed block encoder', () => {
   it('builds decodable compressed-block payload for single-sequence case', () => {

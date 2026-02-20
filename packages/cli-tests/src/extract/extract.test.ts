@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { compress, decompress } from 'zstdify';
+import { compress } from 'zstdify';
 import { createTempDir, runCli } from '../test-utils/cliTestEnv.js';
 
 describe('CLI extract command', () => {

@@ -51,12 +51,11 @@ export function readWeightsFSE(
 
   const header = data.subarray(offset, offset + compressedSize);
 
-  const { normalizedCounter, tableLog, bytesRead: ncountBytes } = readNCount(
-    header,
-    0,
-    MAX_WEIGHT_SYMBOL,
-    MAX_WEIGHT_TABLE_LOG,
-  );
+  const {
+    normalizedCounter,
+    tableLog,
+    bytesRead: ncountBytes,
+  } = readNCount(header, 0, MAX_WEIGHT_SYMBOL, MAX_WEIGHT_TABLE_LOG);
 
   const table = buildFSEDecodeTable(normalizedCounter, tableLog);
   const streamStart = ncountBytes;

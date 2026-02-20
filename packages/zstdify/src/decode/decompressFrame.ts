@@ -32,7 +32,10 @@ export function decompressFrame(
   if (dictionaryContent && dictionaryContent.length > 0) {
     history = dictionaryContent.slice();
   }
-  let prevHuffmanTable: { table: ReturnType<typeof import('../entropy/huffman.js').buildHuffmanDecodeTable>; maxNumBits: number } | null = null;
+  let prevHuffmanTable: {
+    table: ReturnType<typeof import('../entropy/huffman.js').buildHuffmanDecodeTable>;
+    maxNumBits: number;
+  } | null = null;
   let prevSeqTables: SequenceTables | null = null;
 
   while (true) {

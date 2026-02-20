@@ -4,13 +4,9 @@
 
 import { BitReader } from '../bitstream/bitReader.js';
 import { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
-import { ZstdError } from '../errors.js';
-import {
-  buildHuffmanDecodeTable,
-  decodeHuffmanSymbol,
-  weightsToNumBits,
-} from '../entropy/huffman.js';
+import { buildHuffmanDecodeTable, weightsToNumBits } from '../entropy/huffman.js';
 import { readWeightsDirect, readWeightsFSE } from '../entropy/weights.js';
+import { ZstdError } from '../errors.js';
 
 export type LiteralsBlockType = 0 | 1 | 2 | 3; // Raw, RLE, Compressed, Treeless
 
@@ -120,7 +116,10 @@ export function decodeRLELiterals(data: Uint8Array, offset: number, size: number
   return result;
 }
 
-function weightsToHuffmanTable(weights: number[]): { table: ReturnType<typeof buildHuffmanDecodeTable>; maxNumBits: number } {
+function weightsToHuffmanTable(weights: number[]): {
+  table: ReturnType<typeof buildHuffmanDecodeTable>;
+  maxNumBits: number;
+} {
   let partialSum = 0;
   for (let i = 0; i < weights.length; i++) {
     const w = weights[i] ?? 0;
@@ -215,7 +214,12 @@ function decodeHuffmanStreamByCount(
   reader.skipPadding();
   const out = new Uint8Array(numSymbols);
   for (let i = 0; i < numSymbols; i++) {
-    out[i] = decodeHuffmanSymbol(table, maxNumBits, reader);
+    const peek = reader.readBits(maxNumBits);
+    const row = table[peek];
+    if (!row) {
+      throw new ZstdError('Huffman invalid code', 'corruption_detected');
+    }
+    out[i] = row.symbol;
   }
   return out;
 }
@@ -229,7 +233,11 @@ export function decodeCompressedLiterals(
   compressedSize: number,
   regeneratedSize: number,
   numStreams: 1 | 4,
-): { literals: Uint8Array; huffmanTable: { table: ReturnType<typeof buildHuffmanDecodeTable>; maxNumBits: number }; bytesRead: number } {
+): {
+  literals: Uint8Array;
+  huffmanTable: { table: ReturnType<typeof buildHuffmanDecodeTable>; maxNumBits: number };
+  bytesRead: number;
+} {
   let pos = offset;
   let huffmanTable: { table: ReturnType<typeof buildHuffmanDecodeTable>; maxNumBits: number };
 

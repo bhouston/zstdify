@@ -98,7 +98,7 @@ export function xxh64(data: Uint8Array, seed = 0n): bigint {
  * Validate content checksum: low 4 bytes of XXH64(data, 0) must match stored.
  */
 export function validateContentChecksum(data: Uint8Array, storedChecksum: number): boolean {
-  return computeContentChecksum32(data) === (storedChecksum >>> 0);
+  return computeContentChecksum32(data) === storedChecksum >>> 0;
 }
 
 /**

@@ -75,5 +75,4 @@ describeIfZstd('interop: zstdify -> zstd', () => {
     const decoded = zstdDecompress(encoded);
     expect(decoded).toEqual(input);
   });
-
 });

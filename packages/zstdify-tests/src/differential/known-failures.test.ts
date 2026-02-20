@@ -1,10 +1,10 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decompress } from 'zstdify';
 import { hasZstdCli, zstdCompress, zstdDecompress } from '../helpers/zstdCli.js';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { spawnSync } from 'node:child_process';
 
 const hasZstd = hasZstdCli();
 const describeIfZstd = hasZstd ? describe : describe.skip;
@@ -15,7 +15,7 @@ function makeProblemPayload(size: number): Uint8Array {
   for (let i = 0; i < size; i++) {
     x = (x * 1664525 + 1013904223) >>> 0;
     const randomByte = x & 0xff;
-    data[i] = (i % 64) < 48 ? 65 + (i % 5) : randomByte;
+    data[i] = i % 64 < 48 ? 65 + (i % 5) : randomByte;
   }
   return data;
 }
@@ -46,9 +46,7 @@ describeIfZstd('differential known failures: zstd -> zstdify', () => {
       const dictionaryBytes = new TextEncoder().encode(dictionaryText);
       writeFileSync(dictPath, dictionaryText);
 
-      const payload = new TextEncoder().encode(
-        'vertex normal index',
-      );
+      const payload = new TextEncoder().encode('vertex normal index');
       const encodedWithDict = spawnSync('zstd', ['-q', '-c', '-D', dictPath, '--no-check'], {
         input: Buffer.from(payload),
         encoding: null,
@@ -63,9 +61,7 @@ describeIfZstd('differential known failures: zstd -> zstdify', () => {
         encoding: null,
       });
       if (decodedWithDict.status !== 0) {
-        throw new Error(
-          `zstd dictionary decompress failed: ${decodedWithDict.stderr?.toString() ?? 'unknown error'}`,
-        );
+        throw new Error(`zstd dictionary decompress failed: ${decodedWithDict.stderr?.toString() ?? 'unknown error'}`);
       }
 
       expect(new Uint8Array(decodedWithDict.stdout)).toEqual(payload);

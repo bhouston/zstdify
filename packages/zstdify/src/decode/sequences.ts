@@ -4,12 +4,7 @@
  */
 
 import { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
-import { ZstdError } from '../errors.js';
-import {
-  buildFSEDecodeTable,
-  type FSEDecodeRow,
-  readNCount,
-} from '../entropy/fse.js';
+import { buildFSEDecodeTable, type FSEDecodeRow, readNCount } from '../entropy/fse.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
   LITERALS_LENGTH_TABLE_LOG,
@@ -18,30 +13,24 @@ import {
   OFFSET_CODE_DEFAULT_DISTRIBUTION,
   OFFSET_CODE_TABLE_LOG,
 } from '../entropy/predefined.js';
+import { ZstdError } from '../errors.js';
 import type { Sequence } from './reconstruct.js';
 
 const LL_BASELINE = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048, 4096,
-  8192, 16384, 32768, 65536,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048,
+  4096, 8192, 16384, 32768, 65536,
 ];
 const LL_NUMBITS = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12,
-  13, 14, 15, 16,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 ];
 
 const ML_BASELINE = [
-  3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-  19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-  35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051,
-  4099, 8195, 16387, 32771, 65539,
+  3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+  34, 35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051, 4099, 8195, 16387, 32771, 65539,
 ];
 const ML_NUMBITS = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11,
-  12, 13, 14, 15, 16,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3,
+  3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 ];
 
 export type CompressionMode = 0 | 1 | 2 | 3;
@@ -246,13 +235,9 @@ export function decodeSequences(
 
     const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? readBits(offsetCode) : 0);
 
-    const matchLength = mlCode <= 31
-      ? mlCode + 3
-      : (ML_BASELINE[mlCode] ?? 0) + readBits(ML_NUMBITS[mlCode] ?? 0);
+    const matchLength = mlCode <= 31 ? mlCode + 3 : (ML_BASELINE[mlCode] ?? 0) + readBits(ML_NUMBITS[mlCode] ?? 0);
 
-    const literalsLength = llCode <= 15
-      ? llCode
-      : (LL_BASELINE[llCode] ?? 0) + readBits(LL_NUMBITS[llCode] ?? 0);
+    const literalsLength = llCode <= 15 ? llCode : (LL_BASELINE[llCode] ?? 0) + readBits(LL_NUMBITS[llCode] ?? 0);
 
     sequences.push({
       literalsLength,
