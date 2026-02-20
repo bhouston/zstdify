@@ -50,4 +50,15 @@ describe('zstd fixture conformance', () => {
     const noCheck = readFixture('tiny-level3-no-check.zst');
     expect(new TextDecoder().decode(decompress(noCheck))).toBe('tiny-payload');
   });
+
+  it('decompresses large level3 fixture (multi-block, compressed literals/sequences)', () => {
+    const noCheck = readFixture('large-level3-no-check.zst');
+    const result = decompress(noCheck);
+    expect(result.length).toBeGreaterThan(0);
+    // Fixture is 36-byte chunk repeated 8192 times
+    const chunk = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const expectedLen = chunk.length * 8192;
+    expect(result.length).toBe(expectedLen);
+    expect(new TextDecoder().decode(result.subarray(0, chunk.length))).toBe(chunk);
+  });
 });

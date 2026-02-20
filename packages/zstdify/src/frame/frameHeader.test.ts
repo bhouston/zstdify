@@ -36,4 +36,35 @@ describe('frameHeader', () => {
     ]);
     expect(() => parseZstdFrame(data, 0)).toThrow('Reserved bit');
   });
+
+  it('parses single-segment frame with 1-byte content size and checksum', () => {
+    // FHD: FCS=0 (1 byte), single=1, checksum=1, dict=0 -> 0x24. Then 1 byte content size = 5
+    const data = new Uint8Array([
+      0x28, 0xb5, 0x2f, 0xfd, 0x24, 0x05,
+    ]);
+    const { header } = parseZstdFrame(data, 0);
+    expect(header.singleSegment).toBe(true);
+    expect(header.contentSize).toBe(5);
+    expect(header.hasContentChecksum).toBe(true);
+    expect(header.headerSize).toBe(2);
+  });
+
+  it('parses frame with 2-byte content size', () => {
+    // FHD: FCS=1 (2 bytes), single=1, dict=0 -> 0x60. Single-segment skips WD, so FCS starts immediately.
+    const data = new Uint8Array([
+      0x28, 0xb5, 0x2f, 0xfd, 0x60, 0x01, 0x00,
+    ]);
+    const { header } = parseZstdFrame(data, 0);
+    expect(header.singleSegment).toBe(true);
+    expect(header.contentSize).toBe(257);
+  });
+
+  it('parses frame with dictionary ID (1 byte)', () => {
+    // FHD: FCS=0, single=1, dict=1 -> 0x21. Per spec: [Dict_ID] then [FCS]; so 1 byte dict ID = 42, then 1 byte FCS = 0.
+    const data = new Uint8Array([
+      0x28, 0xb5, 0x2f, 0xfd, 0x21, 0x2a, 0x00,
+    ]);
+    const { header } = parseZstdFrame(data, 0);
+    expect(header.dictionaryId).toBe(0x2a);
+  });
 });

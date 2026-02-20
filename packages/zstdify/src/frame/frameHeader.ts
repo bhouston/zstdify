@@ -49,16 +49,9 @@ export function parseFrameHeader(data: Uint8Array, offset: number): FrameHeader 
   let contentSize: number | null = null;
   let headerSize = 1;
 
+  // Order per spec: Frame_Header_Descriptor | [Window_Descriptor] | [Dictionary_ID] | [Frame_Content_Size]
   if (singleSegment) {
-    const fcsFieldSize =
-      frameContentSizeFlag === 0 ? 1 : frameContentSizeFlag === 1 ? 2 : frameContentSizeFlag === 2 ? 4 : 8;
-    if (offset + fcsFieldSize > data.length) {
-      throw new ZstdError('Frame header truncated (content size)', 'corruption_detected');
-    }
-    contentSize = readFrameContentSize(data, offset, fcsFieldSize);
-    offset += fcsFieldSize;
-    headerSize += fcsFieldSize;
-    windowSize = contentSize;
+    // No Window_Descriptor; next is Dictionary_ID then Frame_Content_Size
   } else {
     if (offset + 1 > data.length) {
       throw new ZstdError('Frame header truncated (window descriptor)', 'corruption_detected');
@@ -73,18 +66,9 @@ export function parseFrameHeader(data: Uint8Array, offset: number): FrameHeader 
     const windowBase = 1 << windowLog;
     const windowAdd = (windowBase / 8) * mantissa;
     windowSize = windowBase + windowAdd;
-
-    if (frameContentSizeFlag > 0) {
-      const fcsFieldSize = frameContentSizeFlag === 1 ? 2 : frameContentSizeFlag === 2 ? 4 : 8;
-      if (offset + fcsFieldSize > data.length) {
-        throw new ZstdError('Frame header truncated (content size)', 'corruption_detected');
-      }
-      contentSize = readFrameContentSize(data, offset, fcsFieldSize);
-      offset += fcsFieldSize;
-      headerSize += fcsFieldSize;
-    }
   }
 
+  // Dictionary_ID (before Frame_Content_Size per spec)
   let dictionaryId: number | null = null;
   const didFieldSize = [0, 1, 2, 4][dictionaryIdFlag]!;
   if (didFieldSize > 0) {
@@ -98,6 +82,29 @@ export function parseFrameHeader(data: Uint8Array, offset: number): FrameHeader 
     dictionaryId = did !== 0 ? did : null;
     offset += didFieldSize;
     headerSize += didFieldSize;
+  }
+
+  // Frame_Content_Size
+  const fcsFieldSize =
+    frameContentSizeFlag === 0
+      ? singleSegment
+        ? 1
+        : 0
+      : frameContentSizeFlag === 1
+        ? 2
+        : frameContentSizeFlag === 2
+          ? 4
+          : 8;
+  if (fcsFieldSize > 0) {
+    if (offset + fcsFieldSize > data.length) {
+      throw new ZstdError('Frame header truncated (content size)', 'corruption_detected');
+    }
+    contentSize = readFrameContentSize(data, offset, fcsFieldSize);
+    offset += fcsFieldSize;
+    headerSize += fcsFieldSize;
+    if (singleSegment) {
+      windowSize = contentSize;
+    }
   }
 
   return {

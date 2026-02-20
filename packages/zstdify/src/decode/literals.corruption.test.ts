@@ -3,6 +3,7 @@ import {
   decodeCompressedLiterals,
   decodeRawLiterals,
   decodeRLELiterals,
+  decodeTreelessLiterals,
   parseLiteralsSectionHeader,
 } from './literals.js';
 
@@ -26,6 +27,14 @@ describe('literals corruption handling', () => {
     const data = new Uint8Array([0x80]); // direct weights header with 1 weight; no stream payload
     expect(() => decodeCompressedLiterals(data, 0, 1, 16, 1)).toThrowError(
       /truncated|Invalid literals compressed size/i,
+    );
+  });
+
+  it('rejects treeless 4-stream with compressedSize < 10', () => {
+    const table = decodeCompressedLiterals(new Uint8Array([129, 0x10, 0x02]), 0, 3, 1, 1).huffmanTable;
+    const data = new Uint8Array(9);
+    expect(() => decodeTreelessLiterals(data, 0, 9, 100, 4, table)).toThrowError(
+      /4-stream mode requires at least 10 bytes/i,
     );
   });
 });
