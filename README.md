@@ -139,5 +139,5 @@ MIT
 [npmtrends-url]: https://www.npmtrends.com/zstdify
 [tests-badge]: https://github.com/bhouston/zstdify/workflows/Tests/badge.svg
 [tests-url]: https://github.com/bhouston/zstdify/actions/workflows/test.yml
-[coverage-badge]: https://codecov.io/gh/bhouston/zstdify/branch/main/graph/badge.svg
+[coverage-badge]: https://codecov.io/gh/bhouston/zstdify/graph/badge.svg?token=K9NKF7F3T0
 [coverage-url]: https://codecov.io/gh/bhouston/zstdify
