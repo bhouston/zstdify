@@ -12,6 +12,7 @@ Pure JavaScript/TypeScript zstd compression/decompression library. No native dep
 ## Features
 
 - **Pure JS/TS zstd in Node and browsers**: No native dependencies, portable by default.
+- **Faster than Node.js's built-in Zstd**: Decompression throughput is up to 50% faster that Node.js.
 - **Decoder support across real-world zstd frames**:
   - Raw, RLE, and compressed blocks (including Huffman/FSE-based paths).
   - Single and concatenated frames, plus skippable frame support.
@@ -26,8 +27,8 @@ Pure JavaScript/TypeScript zstd compression/decompression library. No native dep
   - Pure TypeScript dictionary training from sample payloads.
   - Zstd-inspired training options (`fastcover`/`cover`/`legacy` style knobs).
 - **Tree-shaken bundle size (Rollup + Terser, compressed)**:
-  - `zstdify/compress`: ~4.91 KiB gzip / ~4.43 KiB brotli.
-  - `zstdify/decompress`: ~7.46 KiB gzip / ~6.62 KiB brotli.
+  - `zstdify/compress`: ~5.27 KiB  gzip / ~4.75 KiB brotli.
+  - `zstdify/decompress`: ~8.63 KiB gzip / ~7.67 KiB brotli.
 - **Interop-focused**: `zstdify` output is decoded by the official `zstd` CLI and by the [zstddec](https://www.npmjs.com/package/zstddec) npm package; `zstd` CLI output is decoded by `zstdify`.
 - **Extensively tested**:
   - Round-trip and property-based tests.
