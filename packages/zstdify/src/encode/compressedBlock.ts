@@ -11,6 +11,23 @@ import {
   OFFSET_CODE_TABLE_LOG,
 } from '../entropy/predefined.js';
 
+// Predefined FSE tables built once and reused for sequence encoding.
+let cachedLLTable: readonly FSEDecodeRow[] | null = null;
+let cachedOFTable: readonly FSEDecodeRow[] | null = null;
+let cachedMLTable: readonly FSEDecodeRow[] | null = null;
+function getPredefinedFSETables(): {
+  ll: readonly FSEDecodeRow[];
+  of: readonly FSEDecodeRow[];
+  ml: readonly FSEDecodeRow[];
+} {
+  if (!cachedLLTable) {
+    cachedLLTable = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
+    cachedOFTable = buildFSEDecodeTable(OFFSET_CODE_DEFAULT_DISTRIBUTION, OFFSET_CODE_TABLE_LOG);
+    cachedMLTable = buildFSEDecodeTable(MATCH_LENGTH_DEFAULT_DISTRIBUTION, MATCH_LENGTH_TABLE_LOG);
+  }
+  return { ll: cachedLLTable, of: cachedOFTable!, ml: cachedMLTable! };
+}
+
 const LL_BASELINE = [
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048,
   4096, 8192, 16384, 32768, 65536,
@@ -181,14 +198,24 @@ function splitPowerTerms(targetSum: number, count: number): number[] | null {
 
 function buildGeneralCompressedLiterals(literals: Uint8Array): Uint8Array | null {
   if (literals.length === 0 || literals.length > 1023) return null;
-  const symbols = new Set<number>();
-  for (const byte of literals) {
-    symbols.add(byte);
+  const seen = new Uint8Array(256);
+  let numSymbols = 0;
+  let maxSymbol = 0;
+  for (let i = 0; i < literals.length; i++) {
+    const b = literals[i]!;
+    if (seen[b] === 0) {
+      seen[b] = 1;
+      numSymbols++;
+      if (b > maxSymbol) maxSymbol = b;
+    }
   }
-  if (symbols.size === 0 || symbols.size > 128) return null;
-  const sortedSymbols = [...symbols].sort((a, b) => a - b);
-  const maxSymbol = sortedSymbols[sortedSymbols.length - 1] ?? 0;
+  if (numSymbols === 0 || numSymbols > 128) return null;
   if (maxSymbol > 127) return null;
+
+  const sortedSymbols: number[] = [];
+  for (let s = 0; s <= maxSymbol; s++) {
+    if (seen[s] !== 0) sortedSymbols.push(s);
+  }
 
   // Construct a valid direct-weight table over symbols <= 127.
   const partialTarget = 128; // maxNumBits=8 => total 256, remainder is 128 (power of two).
@@ -210,19 +237,21 @@ function buildGeneralCompressedLiterals(literals: Uint8Array): Uint8Array | null
   const numBits = weightsToNumBits(fullWeights, 8);
   const table = buildHuffmanDecodeTable(numBits, 8);
 
-  const symbolCode = new Map<number, number>();
-  for (const symbol of sortedSymbols) {
+  const codeBySymbol = new Int32Array(256).fill(-1);
+  for (let i = 0; i < sortedSymbols.length; i++) {
+    const symbol = sortedSymbols[i]!;
     const code = table.findIndex((row) => row?.symbol === symbol);
     if (code < 0) return null;
-    symbolCode.set(symbol, code);
+    codeBySymbol[symbol] = code;
   }
 
-  const stream = encodeReverseBitstream(
-    new Array(literals.length).fill(0).map((_, i) => ({
-      n: 8,
-      value: symbolCode.get(literals[i] ?? 0) ?? 0,
-    })),
-  );
+  const readOrder: ReverseReadChunk[] = [];
+  for (let i = 0; i < literals.length; i++) {
+    const code = codeBySymbol[literals[i]!]!;
+    if (code < 0) return null;
+    readOrder.push({ n: 8, value: code });
+  }
+  const stream = encodeReverseBitstream(readOrder);
 
   const numWeights = weights.length;
   if (numWeights < 1 || numWeights > 128) return null;
@@ -297,70 +326,67 @@ function buildStatePath(
 ): { states: number[]; updateBits: number[] } | null {
   if (codes.length === 0) return { states: [], updateBits: [] };
   const tableSize = table.length;
-  const statesByCode = new Map<number, number[]>();
+  const statesByCode: number[][] = [];
   for (let s = 0; s < tableSize; s++) {
     const row = table[s];
     if (!row) continue;
-    const arr = statesByCode.get(row.symbol) ?? [];
-    arr.push(s);
-    statesByCode.set(row.symbol, arr);
+    const sym = row.symbol;
+    if (!statesByCode[sym]) statesByCode[sym] = [];
+    statesByCode[sym].push(s);
   }
 
-  const possible: Array<Set<number>> = new Array(codes.length);
-  const nextChoice: Array<Map<number, number>> = new Array(codes.length);
-  for (let i = 0; i < codes.length; i++) {
-    possible[i] = new Set<number>();
-    nextChoice[i] = new Map<number, number>();
+  const possible: number[][] = Array.from({ length: codes.length }, () => []);
+  const nextChoice: Int32Array[] = Array.from(
+    { length: codes.length },
+    () => new Int32Array(tableSize).fill(-1),
+  );
+
+  const lastCode = codes[codes.length - 1] ?? -1;
+  const lastCandidates = statesByCode[lastCode] ?? [];
+  const lastArr = possible[codes.length - 1];
+  if (!lastArr) return null;
+  for (let j = 0; j < lastCandidates.length; j++) {
+    lastArr.push(lastCandidates[j]!);
   }
-  const lastCandidates = statesByCode.get(codes[codes.length - 1] ?? -1) ?? [];
-  const lastSet = possible[codes.length - 1];
-  if (!lastSet) return null;
-  for (const s of lastCandidates) {
-    lastSet.add(s);
-  }
-  if (lastSet.size === 0) return null;
+  if (lastArr.length === 0) return null;
 
   for (let i = codes.length - 2; i >= 0; i--) {
-    const candidates = statesByCode.get(codes[i] ?? -1) ?? [];
-    const nextSet = possible[i + 1];
-    const curSet = possible[i];
-    const curNextChoice = nextChoice[i];
-    if (!nextSet || !curSet || !curNextChoice) return null;
-    for (const s of candidates) {
+    const candidates = statesByCode[codes[i] ?? -1] ?? [];
+    const nextArr = possible[i + 1]!;
+    const curArr = possible[i]!;
+    const curNext = nextChoice[i]!;
+    for (let si = 0; si < candidates.length; si++) {
+      const s = candidates[si]!;
       const row = table[s];
       if (!row) continue;
       const width = row.numBits > 0 ? 1 << row.numBits : 1;
       const minNext = row.baseline;
       const maxNext = row.baseline + width - 1;
       let chosen = -1;
-      for (const n of nextSet) {
+      for (let j = 0; j < nextArr.length; j++) {
+        const n = nextArr[j]!;
         if (n >= minNext && n <= maxNext) {
           chosen = n;
           break;
         }
       }
       if (chosen >= 0) {
-        curSet.add(s);
-        curNextChoice.set(s, chosen);
+        curArr.push(s);
+        curNext[s] = chosen;
       }
     }
-    if (curSet.size === 0) return null;
+    if (curArr.length === 0) return null;
   }
 
   const states: number[] = new Array(codes.length);
   const updateBits: number[] = new Array(Math.max(0, codes.length - 1));
-  const firstSet = possible[0];
-  if (!firstSet) return null;
-  const first = firstSet.values().next().value as number | undefined;
-  if (first === undefined) return null;
-  states[0] = first;
+  const firstArr = possible[0];
+  if (!firstArr || firstArr.length === 0) return null;
+  states[0] = firstArr[0]!;
   for (let i = 0; i < codes.length - 1; i++) {
-    const cur = states[i];
-    if (cur === undefined) return null;
-    const choices = nextChoice[i];
-    if (!choices) return null;
-    const next = choices.get(cur);
-    if (next === undefined) return null;
+    const cur = states[i]!;
+    const next = nextChoice[i]![cur];
+    if (next === undefined || next < 0) return null;
     states[i + 1] = next;
     const row = table[cur];
     if (!row) return null;
@@ -399,9 +425,7 @@ function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Ar
     ofExtra.push({ n: ofCode, value: ofEx });
   }
 
-  const llTable = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
-  const ofTable = buildFSEDecodeTable(OFFSET_CODE_DEFAULT_DISTRIBUTION, OFFSET_CODE_TABLE_LOG);
-  const mlTable = buildFSEDecodeTable(MATCH_LENGTH_DEFAULT_DISTRIBUTION, MATCH_LENGTH_TABLE_LOG);
+  const { ll: llTable, of: ofTable, ml: mlTable } = getPredefinedFSETables();
 
   const llPath = buildStatePath(llCodes, llTable);
   const ofPath = buildStatePath(ofCodes, ofTable);
