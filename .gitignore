@@ -16,3 +16,4 @@ zstdify-bench.cpuprofile
 decode-only.cpuprofile
 zstdify-decode-focused.cpuprofile
 zstdify-decode-profile.cpuprofile
+zstdify-encode-profile.cpuprofile

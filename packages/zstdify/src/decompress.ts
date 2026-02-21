@@ -3,16 +3,22 @@
  */
 
 import { decompressFrame } from './decode/decompressFrame.js';
+import type { DecoderReuseBag } from './decode/reconstruct.js';
 import { normalizeDecoderDictionary } from './dictionary/decoderDictionary.js';
 import { ZstdError } from './errors.js';
 import { parseZstdFrame } from './frame/frameHeader.js';
 import { isSkippableFrame, skipSkippableFrame } from './frame/skippable.js';
+
+/** Opaque context for reusing decoder state across repeated decompress() calls. Pass to options.reuseContext for speed. */
+export type DecoderContext = DecoderReuseBag;
 
 export type DecompressOptions = {
   maxSize?: number;
   dictionary?: Uint8Array | { bytes: Uint8Array; id?: number };
   /** When true (default), validate frame content checksum when present. Set to false to skip validation for speed. */
   validateChecksum?: boolean;
+  /** Optional reusable context; use one context per logical stream for best speed when decoding repeatedly. */
+  reuseContext?: DecoderContext;
 };
 
 export function decompress(input: Uint8Array, options?: DecompressOptions): Uint8Array {
@@ -58,6 +64,7 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
       normalizedDictionary,
       maxSize !== undefined ? maxSize - totalOutputSize : undefined,
       validateChecksum,
+      options?.reuseContext,
     );
     chunks.push(output);
     totalOutputSize += output.length;

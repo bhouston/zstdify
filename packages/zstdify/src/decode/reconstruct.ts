@@ -38,6 +38,36 @@ export function createHistoryWindow(windowSize: number, initial?: Uint8Array): H
   return history;
 }
 
+/** Internal: reuse bag for decoder context. */
+export interface DecoderReuseBag {
+  _history?: HistoryWindow;
+}
+
+/**
+ * Get or create a history window, reusing from bag when buffer is large enough.
+ * Caller may pass a mutable bag; it will be updated with the history used.
+ */
+export function getOrCreateHistoryWindow(
+  windowSize: number,
+  initial: Uint8Array | undefined,
+  reuse: DecoderReuseBag | undefined,
+): HistoryWindow {
+  const existing = reuse?._history;
+  if (existing && existing.buffer.length >= windowSize) {
+    existing.length = 0;
+    existing.writePos = 0;
+    if (initial && initial.length > 0) {
+      appendToHistoryWindow(existing, initial);
+    }
+    return existing;
+  }
+  const history = createHistoryWindow(windowSize, initial);
+  if (reuse) {
+    reuse._history = history;
+  }
+  return history;
+}
+
 export function appendToHistoryWindow(history: HistoryWindow, chunk: Uint8Array): void {
   const cap = history.buffer.length;
   if (cap === 0 || chunk.length === 0) {
@@ -60,6 +90,8 @@ export function appendToHistoryWindow(history: HistoryWindow, chunk: Uint8Array)
   history.length = Math.min(cap, history.length + chunk.length);
 }
 
+const APPEND_RANGE_LOOP_THRESHOLD = 16;
+
 export function appendRangeToHistoryWindow(
   history: HistoryWindow,
   source: Uint8Array,
@@ -81,10 +113,18 @@ export function appendRangeToHistoryWindow(
     return;
   }
   const firstLen = Math.min(length, cap - history.writePos);
-  history.buffer.set(source.subarray(start, start + firstLen), history.writePos);
   const remaining = length - firstLen;
-  if (remaining > 0) {
-    history.buffer.set(source.subarray(start + firstLen, start + firstLen + remaining), 0);
+  if (length <= APPEND_RANGE_LOOP_THRESHOLD) {
+    let wp = history.writePos;
+    for (let i = 0; i < length; i++) {
+      history.buffer[wp] = source[start + i]!;
+      wp = wp + 1 === cap ? 0 : wp + 1;
+    }
+  } else {
+    history.buffer.set(source.subarray(start, start + firstLen), history.writePos);
+    if (remaining > 0) {
+      history.buffer.set(source.subarray(start + firstLen, start + firstLen + remaining), 0);
+    }
   }
   history.writePos = (history.writePos + length) % cap;
   history.length = Math.min(cap, history.length + length);
@@ -129,13 +169,22 @@ export function executeSequencesInto(
   let outPos = targetOffset;
   let litPos = 0;
 
+  const LIT_COPY_LOOP_THRESHOLD = 16;
+  const HISTORY_COPY_LOOP_THRESHOLD = 16;
+
   for (const seq of sequences) {
     if (seq.literalsLength > 0) {
       const litEnd = litPos + seq.literalsLength;
       if (litEnd > literals.length) {
         throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
       }
-      target.set(literals.subarray(litPos, litEnd), outPos);
+      if (seq.literalsLength <= LIT_COPY_LOOP_THRESHOLD) {
+        for (let i = 0; i < seq.literalsLength; i++) {
+          target[outPos + i] = literals[litPos + i]!;
+        }
+      } else {
+        target.set(literals.subarray(litPos, litEnd), outPos);
+      }
       outPos += seq.literalsLength;
       litPos = litEnd;
     }
@@ -185,12 +234,21 @@ export function executeSequencesInto(
         physicalStart -= historyCap;
       }
       const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
-      target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
-      outPos += firstHistoryChunk;
       const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
-      if (remainingHistoryChunk > 0) {
-        target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
-        outPos += remainingHistoryChunk;
+      if (historyCopyLen <= HISTORY_COPY_LOOP_THRESHOLD) {
+        let phys = physicalStart;
+        for (let i = 0; i < historyCopyLen; i++) {
+          target[outPos + i] = historyBuffer[phys]!;
+          phys = phys + 1 === historyCap ? 0 : phys + 1;
+        }
+        outPos += historyCopyLen;
+      } else {
+        target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
+        outPos += firstHistoryChunk;
+        if (remainingHistoryChunk > 0) {
+          target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
+          outPos += remainingHistoryChunk;
+        }
       }
       remainingMatch -= historyCopyLen;
     }
@@ -230,7 +288,13 @@ export function executeSequencesInto(
   }
   if (litPos < literals.length) {
     const remaining = literals.length - litPos;
-    target.set(literals.subarray(litPos), outPos);
+    if (remaining <= LIT_COPY_LOOP_THRESHOLD) {
+      for (let i = 0; i < remaining; i++) {
+        target[outPos + i] = literals[litPos + i]!;
+      }
+    } else {
+      target.set(literals.subarray(litPos), outPos);
+    }
     outPos += remaining;
   }
   return outPos - targetOffset;

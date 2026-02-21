@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 /**
- * Focused decode profiler:
- * - compress once
- * - run many decode turns in a tight loop
+ * Focused encode profiler:
+ * - one payload, run many compress turns in a tight loop
  * - intended to run with --cpu-prof for hotspot analysis
  *
  * Example:
- *   node --cpu-prof --cpu-prof-name=zstdify-decode-profile.cpuprofile scripts/benchmark-decode-profile.ts --turns 120000
+ *   node --cpu-prof --cpu-prof-name=zstdify-encode-profile.cpuprofile scripts/benchmark-encode-profile.ts --turns 120000
  */
 
 import zlib from 'node:zlib';
-import { type DecoderContext, compress, decompress } from 'zstdify';
+import { compress } from 'zstdify';
 
 function makeSeededPayload(size: number, seed: number): Uint8Array {
   const data = new Uint8Array(size);
@@ -46,20 +45,16 @@ function parseTurns(argv: string[]): number {
 function main(): void {
   const turns = parseTurns(process.argv.slice(2));
   const payload = makeSeededPayload(64 * 1024, 0x12345678);
-  const zstdifyCompressed = compress(payload, { level: 9 });
-  const nodeCompressed = zlib.zstdCompressSync(Buffer.from(payload), {
-    params: { [zlib.constants.ZSTD_c_compressionLevel]: 9 },
-  });
 
-  const ctxZstdify: DecoderContext = {};
-  const ctxNode: DecoderContext = {};
   let checksum = 0;
   const started = performance.now();
   for (let i = 0; i < turns; i++) {
-    const a = decompress(zstdifyCompressed, { validateChecksum: false, reuseContext: ctxZstdify });
-    const b = decompress(nodeCompressed, { validateChecksum: false, reuseContext: ctxNode });
+    const a = compress(payload, { level: 9 });
+    const b = zlib.zstdCompressSync(Buffer.from(payload), {
+      params: { [zlib.constants.ZSTD_c_compressionLevel]: 9 },
+    });
     // biome-ignore lint/style/noNonNullAssertion: safe
-    checksum = (checksum + a[0]! + b[0]!) | 0;
+    checksum = (checksum + (a[0] ?? 0) + (b[0] ?? 0)) | 0;
   }
   const elapsedMs = performance.now() - started;
 
@@ -68,7 +63,7 @@ function main(): void {
       {
         turns,
         elapsedMs: Number(elapsedMs.toFixed(2)),
-        decodeOps: turns * 2,
+        encodeOps: turns * 2,
         checksum,
       },
       null,

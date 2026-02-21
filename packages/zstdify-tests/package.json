@@ -9,6 +9,8 @@
     "bench:prepare": "pnpm --filter zstdify run build",
     "bench:node-vs-zstdify": "pnpm run bench:prepare && node scripts/benchmark-node-vs-zstdify.ts",
     "bench:decode-only": "pnpm run bench:prepare && node scripts/benchmark-decode-only.ts",
+    "bench:decode-profile": "pnpm run bench:prepare && node --cpu-prof --cpu-prof-name=zstdify-decode-profile.cpuprofile scripts/benchmark-decode-profile.ts",
+    "bench:encode-profile": "pnpm run bench:prepare && node --cpu-prof --cpu-prof-name=zstdify-encode-profile.cpuprofile scripts/benchmark-encode-profile.ts",
     "bench:bundle-size": "pnpm run bench:prepare && node scripts/benchmark-bundle-size.ts",
     "bench:render": "node scripts/render-benchmark-chart.ts",
     "bench:update": "pnpm run bench:node-vs-zstdify && pnpm run bench:render",
