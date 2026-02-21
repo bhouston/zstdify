@@ -60,29 +60,73 @@ export function appendToHistoryWindow(history: HistoryWindow, chunk: Uint8Array)
   history.length = Math.min(cap, history.length + chunk.length);
 }
 
-/**
- * Execute sequences to produce decompressed output.
- * repOffsets: [Repeated_Offset1, Repeated_Offset2, Repeated_Offset3], updated in place.
- */
-export function executeSequences(
+export function appendRangeToHistoryWindow(
+  history: HistoryWindow,
+  source: Uint8Array,
+  start: number,
+  length: number,
+): void {
+  const cap = history.buffer.length;
+  if (cap === 0 || length <= 0) {
+    return;
+  }
+  if (start < 0 || length < 0 || start + length > source.length) {
+    throw new RangeError('Invalid source range for history append');
+  }
+  if (length >= cap) {
+    const tailStart = start + length - cap;
+    history.buffer.set(source.subarray(tailStart, start + length), 0);
+    history.length = cap;
+    history.writePos = 0;
+    return;
+  }
+  const firstLen = Math.min(length, cap - history.writePos);
+  history.buffer.set(source.subarray(start, start + firstLen), history.writePos);
+  const remaining = length - firstLen;
+  if (remaining > 0) {
+    history.buffer.set(source.subarray(start + firstLen, start + firstLen + remaining), 0);
+  }
+  history.writePos = (history.writePos + length) % cap;
+  history.length = Math.min(cap, history.length + length);
+}
+
+export function appendRLEToHistoryWindow(history: HistoryWindow, byte: number, length: number): void {
+  const cap = history.buffer.length;
+  if (cap === 0 || length <= 0) {
+    return;
+  }
+  const fillByte = byte & 0xff;
+  if (length >= cap) {
+    history.buffer.fill(fillByte, 0, cap);
+    history.length = cap;
+    history.writePos = 0;
+    return;
+  }
+  const firstLen = Math.min(length, cap - history.writePos);
+  history.buffer.fill(fillByte, history.writePos, history.writePos + firstLen);
+  const remaining = length - firstLen;
+  if (remaining > 0) {
+    history.buffer.fill(fillByte, 0, remaining);
+  }
+  history.writePos = (history.writePos + length) % cap;
+  history.length = Math.min(cap, history.length + length);
+}
+
+export function executeSequencesInto(
   literals: Uint8Array,
   sequences: Sequence[],
   windowSize: number,
+  target: Uint8Array,
+  targetOffset: number,
   repOffsets: [number, number, number] = [1, 4, 8],
   historyInput: HistoryWindow | Uint8Array = { buffer: new Uint8Array(0), length: 0, writePos: 0 },
-): Uint8Array {
+): number {
   const history = isHistoryWindow(historyInput) ? historyInput : createHistoryWindow(windowSize, historyInput);
-  // Sequence literals are slices of `literals`, so only matches expand output size.
-  let totalSize = literals.length;
-  for (const seq of sequences) {
-    totalSize += seq.matchLength;
-  }
   const historyLength = history.length;
   const historyCap = history.buffer.length;
   const historyOldestPos = historyCap > 0 ? (history.writePos - historyLength + historyCap) % historyCap : 0;
   const historyBuffer = history.buffer;
-  const buffer = new Uint8Array(totalSize);
-  let outPos = 0;
+  let outPos = targetOffset;
   let litPos = 0;
 
   for (const seq of sequences) {
@@ -91,7 +135,7 @@ export function executeSequences(
       if (litEnd > literals.length) {
         throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
       }
-      buffer.set(literals.subarray(litPos, litEnd), outPos);
+      target.set(literals.subarray(litPos, litEnd), outPos);
       outPos += seq.literalsLength;
       litPos = litEnd;
     }
@@ -117,7 +161,7 @@ export function executeSequences(
       }
       offset = repOffsets[repeatIndex]!;
     }
-    const produced = outPos;
+    const produced = outPos - targetOffset;
     const maxReachBack = Math.min(windowSize, produced + historyLength);
     if (offset <= 0 || offset > maxReachBack) {
       throw new ZstdError(
@@ -126,7 +170,7 @@ export function executeSequences(
       );
     }
     let remainingMatch = seq.matchLength;
-    const historyBytesNeeded = Math.max(0, offset - outPos);
+    const historyBytesNeeded = Math.max(0, offset - produced);
     if (historyBytesNeeded > 0) {
       if (historyCap === 0) {
         throw new ZstdError('Invalid history read', 'corruption_detected');
@@ -141,29 +185,28 @@ export function executeSequences(
         physicalStart -= historyCap;
       }
       const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
-      buffer.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
+      target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
       outPos += firstHistoryChunk;
       const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
       if (remainingHistoryChunk > 0) {
-        buffer.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
+        target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
         outPos += remainingHistoryChunk;
       }
       remainingMatch -= historyCopyLen;
     }
     if (remainingMatch > 0) {
-      let copyStart = outPos - offset;
+      const copyStart = outPos - offset;
       if (offset >= remainingMatch) {
-        buffer.set(buffer.subarray(copyStart, copyStart + remainingMatch), outPos);
+        target.copyWithin(outPos, copyStart, copyStart + remainingMatch);
         outPos += remainingMatch;
       } else {
         // Handle overlapping copies with exponentially growing chunks.
         let copied = offset;
-        buffer.set(buffer.subarray(copyStart, copyStart + copied), outPos);
+        target.copyWithin(outPos, copyStart, copyStart + copied);
         outPos += copied;
         while (copied < remainingMatch) {
           const toCopy = Math.min(copied, remainingMatch - copied);
-          copyStart = outPos - copied;
-          buffer.set(buffer.subarray(copyStart, copyStart + toCopy), outPos);
+          target.copyWithin(outPos, outPos - copied, outPos - copied + toCopy);
           outPos += toCopy;
           copied += toCopy;
         }
@@ -186,8 +229,31 @@ export function executeSequences(
     }
   }
   if (litPos < literals.length) {
-    buffer.set(literals.subarray(litPos), outPos);
-    outPos += literals.length - litPos;
+    const remaining = literals.length - litPos;
+    target.set(literals.subarray(litPos), outPos);
+    outPos += remaining;
   }
+  return outPos - targetOffset;
+}
+
+/**
+ * Execute sequences to produce decompressed output.
+ * repOffsets: [Repeated_Offset1, Repeated_Offset2, Repeated_Offset3], updated in place.
+ */
+export function executeSequences(
+  literals: Uint8Array,
+  sequences: Sequence[],
+  windowSize: number,
+  repOffsets: [number, number, number] = [1, 4, 8],
+  historyInput: HistoryWindow | Uint8Array = { buffer: new Uint8Array(0), length: 0, writePos: 0 },
+): Uint8Array {
+  // Sequence literals are slices of `literals`, so only matches expand output size.
+  let totalSize = literals.length;
+  for (const seq of sequences) {
+    totalSize += seq.matchLength;
+  }
+  const buffer = new Uint8Array(totalSize);
+  const outSize = executeSequencesInto(literals, sequences, windowSize, buffer, 0, repOffsets, historyInput);
+  const outPos = outSize;
   return outPos === buffer.length ? buffer : buffer.subarray(0, outPos);
 }

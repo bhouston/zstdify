@@ -52,7 +52,7 @@ function nodeCompress(data: Uint8Array, level: number): Buffer {
 
 function mbps(bytes: number, ms: number): number {
   if (ms <= 0) return 0;
-  return (bytes / 1_000_000) / (ms / 1000);
+  return bytes / 1_000_000 / (ms / 1000);
 }
 
 interface Row {

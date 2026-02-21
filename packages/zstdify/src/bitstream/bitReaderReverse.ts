@@ -41,11 +41,11 @@ export class BitReaderReverse {
       const byteIndex = requestedStart >>> 3;
       const bitInByte = requestedStart & 7;
       const readWord = (idx: number): number =>
-        (((this.data[idx] ?? 0) |
+        ((this.data[idx] ?? 0) |
           ((this.data[idx + 1] ?? 0) << 8) |
           ((this.data[idx + 2] ?? 0) << 16) |
           ((this.data[idx + 3] ?? 0) << 24)) >>>
-          0);
+        0;
 
       const word0 = readWord(byteIndex);
       if (bitInByte + n <= 32) {

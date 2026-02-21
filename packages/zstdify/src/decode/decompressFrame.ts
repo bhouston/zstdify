@@ -15,7 +15,13 @@ import {
   decodeTreelessLiterals,
   parseLiteralsSectionHeader,
 } from './literals.js';
-import { appendToHistoryWindow, createHistoryWindow, executeSequences } from './reconstruct.js';
+import {
+  appendRangeToHistoryWindow,
+  appendRLEToHistoryWindow,
+  appendToHistoryWindow,
+  createHistoryWindow,
+  executeSequencesInto,
+} from './reconstruct.js';
 import { decodeSequences, type SequenceTables } from './sequences.js';
 
 export function decompressFrame(
@@ -73,14 +79,23 @@ export function decompressFrame(
     pos += 3;
 
     if (block.blockType === 0) {
-      const literals = decodeRawLiterals(data, pos, block.blockSize);
-      appendOutput(literals);
-      appendToHistoryWindow(history, literals);
+      if (pos + block.blockSize > data.length) {
+        throw new ZstdError('Raw literals truncated', 'corruption_detected');
+      }
+      ensureOutputCapacity(block.blockSize);
+      outputBuffer.set(data.subarray(pos, pos + block.blockSize), totalSize);
+      appendRangeToHistoryWindow(history, data, pos, block.blockSize);
+      totalSize += block.blockSize;
       pos += block.blockSize;
     } else if (block.blockType === 1) {
-      const literals = decodeRLELiterals(data, pos, block.blockSize);
-      appendOutput(literals);
-      appendToHistoryWindow(history, literals);
+      if (pos >= data.length) {
+        throw new ZstdError('RLE literals truncated', 'corruption_detected');
+      }
+      const byte = data[pos]!;
+      ensureOutputCapacity(block.blockSize);
+      outputBuffer.fill(byte, totalSize, totalSize + block.blockSize);
+      appendRLEToHistoryWindow(history, byte, block.blockSize);
+      totalSize += block.blockSize;
       pos += 1;
     } else if (block.blockType === 2) {
       const blockContent = data.subarray(pos, pos + block.blockSize);
@@ -123,21 +138,35 @@ export function decompressFrame(
       }
 
       const seqSectionSize = block.blockSize - litBytesConsumed;
-      let output: Uint8Array;
       if (seqSectionSize <= 0) {
-        output = literals;
+        appendOutput(literals);
+        appendToHistoryWindow(history, literals);
       } else {
         const seqResult = decodeSequences(blockContent, litBytesConsumed, seqSectionSize, prevSeqTables);
         prevSeqTables = seqResult.tables;
         if (seqResult.sequences.length === 0) {
-          output = literals;
+          appendOutput(literals);
+          appendToHistoryWindow(history, literals);
         } else {
-          output = executeSequences(literals, seqResult.sequences, header.windowSize, repOffsets, history);
+          let decodedSize = literals.length;
+          for (const seq of seqResult.sequences) {
+            decodedSize += seq.matchLength;
+          }
+          ensureOutputCapacity(decodedSize);
+          const start = totalSize;
+          const written = executeSequencesInto(
+            literals,
+            seqResult.sequences,
+            header.windowSize,
+            outputBuffer,
+            start,
+            repOffsets,
+            history,
+          );
+          totalSize += written;
+          appendRangeToHistoryWindow(history, outputBuffer, start, written);
         }
       }
-
-      appendOutput(output);
-      appendToHistoryWindow(history, output);
       pos += block.blockSize;
     } else {
       throw new ZstdError('Unsupported block type', 'corruption_detected');
