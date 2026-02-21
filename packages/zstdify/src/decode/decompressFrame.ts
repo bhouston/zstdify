@@ -172,8 +172,8 @@ export function decompressFrame(
           }
         } else {
           let decodedSize = literals.length;
-          for (const seq of seqResult.sequences) {
-            decodedSize += seq.matchLength;
+          for (let i = 0; i < seqResult.sequences.length; i++) {
+            decodedSize += seqResult.sequences.matchLength[i] ?? 0;
           }
           ensureOutputCapacity(decodedSize);
           const start = totalSize;

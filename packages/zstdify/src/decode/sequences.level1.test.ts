@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { parseFrameHeader } from '../frame/frameHeader.js';
 import { parseBlockHeader } from './block.js';
 import { decodeRawLiterals, parseLiteralsSectionHeader } from './literals.js';
-import { executeSequences } from './reconstruct.js';
+import { executeSequences, packedSequencesToArray } from './reconstruct.js';
 import { decodeSequences } from './sequences.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,9 +33,9 @@ describe('sequence internals (level1 fixture)', () => {
     const litBytesConsumed = litHeader.headerSize + litHeader.regeneratedSize;
 
     const seq = decodeSequences(blockContent, litBytesConsumed, block.blockSize - litBytesConsumed, null);
-    expect(seq.sequences).toEqual([{ literalsLength: 12, offset: 15, matchLength: 108 }]);
+    expect(packedSequencesToArray(seq.sequences)).toEqual([{ literalsLength: 12, offset: 15, matchLength: 108 }]);
 
-    const output = executeSequences(literals, seq.sequences, header.windowSize, [1, 4, 8]);
+    const output = executeSequences(literals, packedSequencesToArray(seq.sequences), header.windowSize, [1, 4, 8]);
     expect(output.length).toBe(120);
     expect(new TextDecoder().decode(output)).toBe(
       'hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world ',

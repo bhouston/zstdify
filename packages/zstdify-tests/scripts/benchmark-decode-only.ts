@@ -16,32 +16,12 @@ import zlib from 'node:zlib';
 import { Bench } from 'tinybench';
 import { ZSTDDecoder } from 'zstddec';
 import { compress, decompress } from 'zstdify';
+import { loadBenchCorpus } from './bench-corpus.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BENCH_DIR = path.join(__dirname, '..', 'benchmarks');
 
-function makeSeededPayload(size: number, seed: number): Uint8Array {
-  const data = new Uint8Array(size);
-  let x = seed >>> 0;
-  for (let i = 0; i < size; i++) {
-    x = (x * 1664525 + 1013904223) >>> 0;
-    data[i] = x & 0xff;
-  }
-  return data;
-}
-
-const PAYLOADS: Array<{ id: string; data: Uint8Array }> = [
-  {
-    id: 'small-text',
-    data: new TextEncoder().encode('hello world hello world hello world hello world hello world '),
-  },
-  { id: 'binary-1k', data: makeSeededPayload(1024, 42) },
-  { id: 'binary-4k', data: makeSeededPayload(4 * 1024, 0x12345678) },
-  { id: 'binary-64k', data: makeSeededPayload(64 * 1024, 0x12345678) },
-  { id: 'repeated-byte', data: new Uint8Array(4096).fill(0x61) },
-];
-
-const LEVELS = [3, 5, 9];
+const LEVELS = [6];
 
 function nodeCompress(data: Uint8Array, level: number): Buffer {
   const params: Record<number, number> = {
@@ -57,6 +37,7 @@ function mbps(bytes: number, ms: number): number {
 
 interface Row {
   payloadId: string;
+  payloadCategory: string;
   payloadBytes: number;
   level: number;
   decodeZstdifyFromZstdifyMs: number;
@@ -68,11 +49,12 @@ interface Row {
 async function main(): Promise<void> {
   const decoder = new ZSTDDecoder();
   await decoder.init();
+  const payloads = loadBenchCorpus();
 
   fs.mkdirSync(BENCH_DIR, { recursive: true });
   const rows: Row[] = [];
 
-  for (const { id: payloadId, data } of PAYLOADS) {
+  for (const { id: payloadId, category: payloadCategory, data } of payloads) {
     const payloadBytes = data.length;
     for (const level of LEVELS) {
       const zstdifyCompressed = compress(data, { level });
@@ -110,6 +92,7 @@ async function main(): Promise<void> {
 
       rows.push({
         payloadId,
+        payloadCategory,
         payloadBytes,
         level,
         decodeZstdifyFromZstdifyMs: getMedianMs('decode zstdify <- zstdify'),
@@ -127,6 +110,7 @@ async function main(): Promise<void> {
     rows,
     throughput: rows.map((r) => ({
       payloadId: r.payloadId,
+      payloadCategory: r.payloadCategory,
       payloadBytes: r.payloadBytes,
       level: r.level,
       decodeZstdifyFromZstdifyMbps: mbps(r.payloadBytes, r.decodeZstdifyFromZstdifyMs),
@@ -146,11 +130,11 @@ async function main(): Promise<void> {
     '',
     '## Throughput (MB/s)',
     '',
-    '| Payload | Level | zstdify <- zstdify | zstdify <- node | node <- node | zstddec <- zstdify |',
-    '|---|---:|---:|---:|---:|---:|',
+    '| Payload | Category | Level | zstdify <- zstdify | zstdify <- node | node <- node | zstddec <- zstdify |',
+    '|---|---|---:|---:|---:|---:|---:|',
     ...summary.throughput.map(
       (t) =>
-        `| ${t.payloadId} | ${t.level} | ${t.decodeZstdifyFromZstdifyMbps.toFixed(2)} | ${t.decodeZstdifyFromNodeMbps.toFixed(2)} | ${t.decodeNodeFromNodeMbps.toFixed(2)} | ${t.decodeZstddecFromZstdifyMbps.toFixed(2)} |`,
+        `| ${t.payloadId} | ${t.payloadCategory} | ${t.level} | ${t.decodeZstdifyFromZstdifyMbps.toFixed(2)} | ${t.decodeZstdifyFromNodeMbps.toFixed(2)} | ${t.decodeNodeFromNodeMbps.toFixed(2)} | ${t.decodeZstddecFromZstdifyMbps.toFixed(2)} |`,
     ),
     '',
   ].join('\n');

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "datasets": [
+    {
+      "id": "war-and-peace-txt",
+      "category": "text",
+      "description": "Project Gutenberg plain text book (large natural language text).",
+      "url": "https://www.gutenberg.org/cache/epub/2600/pg2600.txt",
+      "outputFileName": "war-and-peace.txt"
+    },
+    {
+      "id": "shakespeare-complete-txt",
+      "category": "text",
+      "description": "Project Gutenberg plain text corpus with diverse style and punctuation.",
+      "url": "https://www.gutenberg.org/cache/epub/100/pg100.txt",
+      "outputFileName": "shakespeare-complete.txt"
+    },
+    {
+      "id": "enwik8",
+      "category": "text",
+      "description": "Classic uncompressed benchmark text payload.",
+      "url": "https://mattmahoney.net/dc/enwik8.zip",
+      "outputFileName": "enwik8",
+      "maxBytes": 1048576,
+      "extract": {
+        "type": "zip",
+        "entry": "enwik8"
+      }
+    },
+    {
+      "id": "linux-kernel-tar",
+      "category": "archive",
+      "description": "Large real-world source tree archive in uncompressed tar format.",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.1.tar.xz",
+      "outputFileName": "linux-6.12.1.tar",
+      "maxBytes": 1048576,
+      "extract": {
+        "type": "xz",
+        "entry": "linux-6.12.1.tar"
+      }
+    },
+    {
+      "id": "apollo17-flightplan-pdf",
+      "category": "document",
+      "description": "Large real PDF document with mixed text and binary structures.",
+      "url": "https://www.hq.nasa.gov/alsj/a17/A17_FlightPlan.pdf",
+      "outputFileName": "apollo17-flightplan.pdf"
+    }
+  ]
+}

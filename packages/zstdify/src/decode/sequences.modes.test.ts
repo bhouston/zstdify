@@ -5,7 +5,7 @@ import { decodeSequences } from './sequences.js';
 describe('decodeSequences modes and extended counts', () => {
   it('parses extended numSequences encoding for >= 128 path', () => {
     const result = decodeSequences(new Uint8Array([0x80, 0x00]), 0, 2, null);
-    expect(result.sequences).toEqual([]);
+    expect(result.sequences.length).toBe(0);
     expect(result.bytesRead).toBe(2);
   });
 

@@ -11,16 +11,7 @@
 
 import zlib from 'node:zlib';
 import { type DecoderContext, compress, decompress } from 'zstdify';
-
-function makeSeededPayload(size: number, seed: number): Uint8Array {
-  const data = new Uint8Array(size);
-  let x = seed >>> 0;
-  for (let i = 0; i < size; i++) {
-    x = (x * 1664525 + 1013904223) >>> 0;
-    data[i] = x & 0xff;
-  }
-  return data;
-}
+import { loadBenchCorpus, selectProfilePayload } from './bench-corpus.ts';
 
 function parseTurns(argv: string[]): number {
   const flagIndex = argv.indexOf('--turns');
@@ -45,10 +36,10 @@ function parseTurns(argv: string[]): number {
 
 function main(): void {
   const turns = parseTurns(process.argv.slice(2));
-  const payload = makeSeededPayload(64 * 1024, 0x12345678);
-  const zstdifyCompressed = compress(payload, { level: 9 });
-  const nodeCompressed = zlib.zstdCompressSync(Buffer.from(payload), {
-    params: { [zlib.constants.ZSTD_c_compressionLevel]: 9 },
+  const payload = selectProfilePayload(loadBenchCorpus());
+  const zstdifyCompressed = compress(payload.data, { level: 6 });
+  const nodeCompressed = zlib.zstdCompressSync(Buffer.from(payload.data), {
+    params: { [zlib.constants.ZSTD_c_compressionLevel]: 6 },
   });
 
   const ctxZstdify: DecoderContext = {};
@@ -67,6 +58,9 @@ function main(): void {
     JSON.stringify(
       {
         turns,
+        payloadId: payload.id,
+        payloadCategory: payload.category,
+        payloadBytes: payload.data.length,
         elapsedMs: Number(elapsedMs.toFixed(2)),
         decodeOps: turns * 2,
         checksum,

@@ -14,7 +14,7 @@ import {
   OFFSET_CODE_TABLE_LOG,
 } from '../entropy/predefined.js';
 import { ZstdError } from '../errors.js';
-import type { Sequence } from './reconstruct.js';
+import { ensurePackedSequencesCapacity, type PackedSequences } from './reconstruct.js';
 
 const LL_BASELINE = [
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048,
@@ -57,7 +57,7 @@ export interface SequenceTables {
 }
 
 export interface DecodeSequencesResult {
-  sequences: Sequence[];
+  sequences: PackedSequences;
   tables: SequenceTables;
   bytesRead: number;
 }
@@ -71,20 +71,33 @@ function getStateRow(table: readonly FSEDecodeRow[], stateValue: number): FSEDec
 }
 
 function buildRLETable(symbol: number, tableLog: number): FSEDecodeRow[] {
+  const cache = tableLog === 5 ? RLE_TABLE_CACHE_5 : tableLog === 6 ? RLE_TABLE_CACHE_6 : null;
+  if (cache) {
+    const cached = cache[symbol];
+    if (cached) {
+      return cached;
+    }
+  }
   const tableSize = 1 << tableLog;
   const table: FSEDecodeRow[] = new Array(tableSize);
   for (let i = 0; i < tableSize; i++) {
     table[i] = { symbol, numBits: tableLog, baseline: 0 };
   }
+  if (cache) {
+    cache[symbol] = table;
+  }
   return table;
 }
+
+const RLE_TABLE_CACHE_5: Array<FSEDecodeRow[] | undefined> = new Array(256);
+const RLE_TABLE_CACHE_6: Array<FSEDecodeRow[] | undefined> = new Array(256);
 
 export function decodeSequences(
   data: Uint8Array,
   offset: number,
   size: number,
   prevTables: SequenceTables | null,
-  sequenceReuse?: Sequence[],
+  sequenceReuse?: PackedSequences,
 ): DecodeSequencesResult {
   if (size < 2) {
     throw new ZstdError('Sequences section too short', 'corruption_detected');
@@ -111,8 +124,10 @@ export function decodeSequences(
   }
 
   if (numSequences === 0) {
+    const sequences = ensurePackedSequencesCapacity(sequenceReuse, 0);
+    sequences.length = 0;
     return {
-      sequences: [],
+      sequences,
       tables: prevTables ?? DEFAULT_SEQUENCE_TABLES,
       bytesRead: pos - offset,
     };
@@ -211,16 +226,15 @@ export function decodeSequences(
   }
   const reader = new BitReaderReverse(bitstream, 0, bitstreamSize);
   reader.skipPadding();
-  const readBits = (numBits: number): number => (numBits > 0 ? reader.readBits(numBits) : 0);
   // Initial states are read in LL, OF, ML order.
-  const stateLL = { value: readBits(llTableLog) };
-  const stateOF = { value: readBits(ofTableLog) };
-  const stateML = { value: readBits(mlTableLog) };
+  const stateLL = { value: llTableLog > 0 ? reader.readBits(llTableLog) : 0 };
+  const stateOF = { value: ofTableLog > 0 ? reader.readBits(ofTableLog) : 0 };
+  const stateML = { value: mlTableLog > 0 ? reader.readBits(mlTableLog) : 0 };
 
-  const sequences = sequenceReuse ?? new Array<Sequence>(numSequences);
-  if (sequences.length < numSequences) {
-    sequences.length = numSequences;
-  }
+  const sequences = ensurePackedSequencesCapacity(sequenceReuse, numSequences);
+  const sequenceLiteralsLength = sequences.literalsLength;
+  const sequenceOffsets = sequences.offset;
+  const sequenceMatchLengths = sequences.matchLength;
 
   for (let i = 0; i < numSequences; i++) {
     const isLast = i === numSequences - 1;
@@ -232,36 +246,28 @@ export function decodeSequences(
     const mlCode = mlRow.symbol;
     const llCode = llRow.symbol;
 
-    const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? readBits(offsetCode) : 0);
+    const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? reader.readBits(offsetCode) : 0);
 
     if (mlCode >= ML_BASELINE.length || mlCode >= ML_NUMBITS.length) {
       throw new ZstdError('Invalid match length code', 'corruption_detected');
     }
-    const matchLength = mlCode <= 31 ? mlCode + 3 : ML_BASELINE[mlCode]! + readBits(ML_NUMBITS[mlCode]!);
+    const matchLength =
+      mlCode <= 31 ? mlCode + 3 : ML_BASELINE[mlCode]! + (ML_NUMBITS[mlCode]! > 0 ? reader.readBits(ML_NUMBITS[mlCode]!) : 0);
 
     if (llCode >= LL_BASELINE.length || llCode >= LL_NUMBITS.length) {
       throw new ZstdError('Invalid literals length code', 'corruption_detected');
     }
-    const literalsLength = llCode <= 15 ? llCode : LL_BASELINE[llCode]! + readBits(LL_NUMBITS[llCode]!);
-
-    const existing = sequences[i];
-    if (existing) {
-      existing.literalsLength = literalsLength;
-      existing.offset = offsetValue;
-      existing.matchLength = matchLength;
-    } else {
-      sequences[i] = {
-        literalsLength,
-        offset: offsetValue,
-        matchLength,
-      };
-    }
+    const literalsLength =
+      llCode <= 15 ? llCode : LL_BASELINE[llCode]! + (LL_NUMBITS[llCode]! > 0 ? reader.readBits(LL_NUMBITS[llCode]!) : 0);
+    sequenceLiteralsLength[i] = literalsLength;
+    sequenceOffsets[i] = offsetValue;
+    sequenceMatchLengths[i] = matchLength;
 
     if (!isLast) {
       // State updates for next sequence are LL, ML, OF.
-      stateLL.value = llRow.baseline + readBits(llRow.numBits);
-      stateML.value = mlRow.baseline + readBits(mlRow.numBits);
-      stateOF.value = ofRow.baseline + readBits(ofRow.numBits);
+      stateLL.value = llRow.baseline + (llRow.numBits > 0 ? reader.readBits(llRow.numBits) : 0);
+      stateML.value = mlRow.baseline + (mlRow.numBits > 0 ? reader.readBits(mlRow.numBits) : 0);
+      stateOF.value = ofRow.baseline + (ofRow.numBits > 0 ? reader.readBits(ofRow.numBits) : 0);
     }
   }
 

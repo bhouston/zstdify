@@ -50,11 +50,172 @@ function writeU24LE(arr: Uint8Array, offset: number, value: number): void {
   arr[offset + 2] = (value >> 16) & 0xff;
 }
 
+const U32_ALL_BITS = 0xffff_ffff >>> 0;
+const pathTableCache = new WeakMap<readonly FSEDecodeRow[], PrecomputedPathTable>();
+let pathMasksScratch: Uint32Array | null = null;
+let pathNextChoiceScratch: Int32Array | null = null;
+
+interface PrecomputedPathTable {
+  tableSize: number;
+  wordCount: number;
+  statesBySymbol: number[][];
+  symbolMasks: Uint32Array[];
+  baselineByState: Int32Array;
+  minNextByState: Int32Array;
+  maxNextByState: Int32Array;
+}
+
+function rangeMask(startBit: number, endBit: number): number {
+  if (startBit === 0 && endBit === 31) return U32_ALL_BITS;
+  const startMask = (U32_ALL_BITS << startBit) >>> 0;
+  const endMask = endBit === 31 ? U32_ALL_BITS : ((1 << (endBit + 1)) - 1) >>> 0;
+  return (startMask & endMask) >>> 0;
+}
+
+function setMaskBit(mask: Uint32Array, maskOffset: number, bit: number): void {
+  const word = bit >>> 5;
+  mask[maskOffset + word] = (mask[maskOffset + word]! | (1 << (bit & 31))) >>> 0;
+}
+
+function isMaskEmpty(mask: Uint32Array, maskOffset: number, wordCount: number): boolean {
+  for (let i = 0; i < wordCount; i++) {
+    if ((mask[maskOffset + i] ?? 0) !== 0) return false;
+  }
+  return true;
+}
+
+function firstBitInWord(word: number): number {
+  const normalized = word >>> 0;
+  const lsb = (normalized & -normalized) >>> 0;
+  return 31 - Math.clz32(lsb);
+}
+
+function findFirstSetBit(mask: Uint32Array, maskOffset: number, wordCount: number): number {
+  for (let wi = 0; wi < wordCount; wi++) {
+    const word = mask[maskOffset + wi] ?? 0;
+    if (word !== 0) {
+      return (wi << 5) + firstBitInWord(word);
+    }
+  }
+  return -1;
+}
+
+function findFirstSetBitInRange(
+  mask: Uint32Array,
+  maskOffset: number,
+  wordCount: number,
+  minState: number,
+  maxState: number,
+): number {
+  if (wordCount <= 0) return -1;
+  let min = minState;
+  let max = maxState;
+  const maxBit = (wordCount << 5) - 1;
+  if (min < 0) min = 0;
+  if (max > maxBit) max = maxBit;
+  if (min > max) return -1;
+  const startWord = min >>> 5;
+  const endWord = max >>> 5;
+  if (startWord === endWord) {
+    const masked = ((mask[maskOffset + startWord] ?? 0) & rangeMask(min & 31, max & 31)) >>> 0;
+    if (masked === 0) return -1;
+    return (startWord << 5) + firstBitInWord(masked);
+  }
+  const firstMasked = ((mask[maskOffset + startWord] ?? 0) & rangeMask(min & 31, 31)) >>> 0;
+  if (firstMasked !== 0) {
+    return (startWord << 5) + firstBitInWord(firstMasked);
+  }
+  for (let wi = startWord + 1; wi < endWord; wi++) {
+    const word = mask[maskOffset + wi] ?? 0;
+    if (word !== 0) return (wi << 5) + firstBitInWord(word);
+  }
+  const lastMasked = ((mask[maskOffset + endWord] ?? 0) & rangeMask(0, max & 31)) >>> 0;
+  if (lastMasked === 0) return -1;
+  return (endWord << 5) + firstBitInWord(lastMasked);
+}
+
+function getPrecomputedPathTable(table: readonly FSEDecodeRow[]): PrecomputedPathTable {
+  const cached = pathTableCache.get(table);
+  if (cached) return cached;
+  const tableSize = table.length;
+  const wordCount = Math.max(1, Math.ceil(tableSize / 32));
+  const baselineByState = new Int32Array(tableSize);
+  const minNextByState = new Int32Array(tableSize);
+  const maxNextByState = new Int32Array(tableSize);
+  let maxSymbol = -1;
+  for (let s = 0; s < tableSize; s++) {
+    const row = table[s];
+    if (!row) {
+      baselineByState[s] = 0;
+      minNextByState[s] = 1;
+      maxNextByState[s] = 0;
+      continue;
+    }
+    baselineByState[s] = row.baseline;
+    const width = row.numBits > 0 ? 1 << row.numBits : 1;
+    const minNext = row.baseline;
+    const maxNext = row.baseline + width - 1;
+    minNextByState[s] = minNext < 0 ? 0 : minNext;
+    maxNextByState[s] = maxNext >= tableSize ? tableSize - 1 : maxNext;
+    if (row.symbol > maxSymbol) maxSymbol = row.symbol;
+  }
+  const statesBySymbol = Array.from({ length: maxSymbol + 1 }, () => [] as number[]);
+  const symbolMasks = Array.from({ length: maxSymbol + 1 }, () => new Uint32Array(wordCount));
+  for (let s = 0; s < tableSize; s++) {
+    const row = table[s];
+    if (!row) continue;
+    const sym = row.symbol;
+    const stateList = statesBySymbol[sym];
+    const stateMask = symbolMasks[sym];
+    if (!stateList || !stateMask) continue;
+    stateList.push(s);
+    stateMask[s >>> 5] = (stateMask[s >>> 5]! | (1 << (s & 31))) >>> 0;
+  }
+  const precomputed = {
+    tableSize,
+    wordCount,
+    statesBySymbol,
+    symbolMasks,
+    baselineByState,
+    minNextByState,
+    maxNextByState,
+  };
+  pathTableCache.set(table, precomputed);
+  return precomputed;
+}
+
+function getPathMasksScratch(requiredLength: number): Uint32Array {
+  if (!pathMasksScratch || pathMasksScratch.length < requiredLength) {
+    pathMasksScratch = new Uint32Array(requiredLength);
+  }
+  pathMasksScratch.fill(0, 0, requiredLength);
+  return pathMasksScratch;
+}
+
+function getPathNextChoiceScratch(requiredLength: number): Int32Array {
+  if (!pathNextChoiceScratch || pathNextChoiceScratch.length < requiredLength) {
+    pathNextChoiceScratch = new Int32Array(requiredLength);
+  }
+  pathNextChoiceScratch.fill(-1, 0, requiredLength);
+  return pathNextChoiceScratch;
+}
+
 function encodeReverseBitstream(bitCounts: ArrayLike<number>, bitValues: ArrayLike<number>): Uint8Array {
-  const bits: number[] = [];
-  const writeBitsLSB = (n: number, value: number) => {
+  let bitLength = 1; // end marker
+  for (let i = 0; i < bitCounts.length; i++) {
+    const n = bitCounts[i] ?? 0;
+    if (n > 0) bitLength += n;
+  }
+  const paddedBits = (bitLength + 7) & ~7;
+  const out = new Uint8Array(paddedBits >>> 3);
+  let bitPos = 0;
+  const writeBitsLSB = (n: number, value: number): void => {
     for (let i = 0; i < n; i++) {
-      bits.push((value >>> i) & 1);
+      if (((value >>> i) & 1) !== 0) {
+        const idx = bitPos >>> 3;
+        out[idx] = (out[idx]! | (1 << (bitPos & 7))) & 0xff;
+      }
+      bitPos++;
     }
   };
   for (let i = bitCounts.length - 1; i >= 0; i--) {
@@ -62,17 +223,9 @@ function encodeReverseBitstream(bitCounts: ArrayLike<number>, bitValues: ArrayLi
     if (n <= 0) continue;
     writeBitsLSB(n, bitValues[i] ?? 0);
   }
-  // Append end marker, then zero-fill above marker so decoder skips them.
-  bits.push(1);
-  while ((bits.length & 7) !== 0) {
-    bits.push(0);
-  }
-  const out = new Uint8Array(Math.ceil(bits.length / 8));
-  for (let i = 0; i < bits.length; i++) {
-    if ((bits[i] ?? 0) !== 0) {
-      const idx = i >>> 3;
-      out[idx] = ((out[idx] ?? 0) | (1 << (i & 7))) & 0xff;
-    }
+  {
+    const idx = bitPos >>> 3;
+    out[idx] = (out[idx]! | (1 << (bitPos & 7))) & 0xff;
   }
   return out;
 }
@@ -324,81 +477,61 @@ function buildStatePath(
   table: readonly FSEDecodeRow[],
 ): { states: number[]; updateBits: number[] } | null {
   if (codes.length === 0) return { states: [], updateBits: [] };
-  const tableSize = table.length;
-  const statesByCode: number[][] = [];
-  for (let s = 0; s < tableSize; s++) {
-    const row = table[s];
-    if (!row) continue;
-    const sym = row.symbol;
-    if (!statesByCode[sym]) statesByCode[sym] = [];
-    statesByCode[sym].push(s);
+  const pre = getPrecomputedPathTable(table);
+  const { tableSize, wordCount, statesBySymbol, symbolMasks, minNextByState, maxNextByState, baselineByState } = pre;
+  if (tableSize <= 0) return null;
+  const rowCount = codes.length;
+  const masks = getPathMasksScratch(rowCount * wordCount);
+  const nextChoice = getPathNextChoiceScratch(Math.max(0, rowCount - 1) * tableSize);
+  const maskOffset = (rowIndex: number) => rowIndex * wordCount;
+  const nextChoiceOffset = (rowIndex: number) => rowIndex * tableSize;
+  const lastCode = codes[rowCount - 1] ?? -1;
+  if (lastCode < 0 || lastCode >= symbolMasks.length) return null;
+  const lastMask = symbolMasks[lastCode];
+  if (!lastMask) return null;
+  const lastMaskOffset = maskOffset(rowCount - 1);
+  for (let wi = 0; wi < wordCount; wi++) {
+    masks[lastMaskOffset + wi] = lastMask[wi] ?? 0;
   }
+  if (isMaskEmpty(masks, lastMaskOffset, wordCount)) return null;
 
-  const possible: number[][] = Array.from({ length: codes.length }, () => []);
-  const nextChoice: Int32Array[] = Array.from(
-    { length: codes.length },
-    () => new Int32Array(tableSize).fill(-1),
-  );
-
-  const lastCode = codes[codes.length - 1] ?? -1;
-  const lastCandidates = statesByCode[lastCode] ?? [];
-  const lastArr = possible[codes.length - 1];
-  if (!lastArr) return null;
-  for (let j = 0; j < lastCandidates.length; j++) {
-    lastArr.push(lastCandidates[j]!);
-  }
-  if (lastArr.length === 0) return null;
-  if (codes.length === 1) {
-    return { states: [lastArr[0]!], updateBits: [] };
-  }
-
-  for (let i = codes.length - 2; i >= 0; i--) {
-    const candidates = statesByCode[codes[i] ?? -1] ?? [];
-    const nextArr = possible[i + 1]!;
-    const curArr = possible[i]!;
-    const curNext = nextChoice[i]!;
-    const nextPresent = new Uint8Array(tableSize);
-    for (let j = 0; j < nextArr.length; j++) {
-      nextPresent[nextArr[j]!] = 1;
-    }
-    const nextFrom = new Int32Array(tableSize + 1);
-    nextFrom[tableSize] = -1;
-    for (let s = tableSize - 1; s >= 0; s--) {
-      nextFrom[s] = nextPresent[s] !== 0 ? s : nextFrom[s + 1]!;
-    }
-    for (let si = 0; si < candidates.length; si++) {
-      const s = candidates[si]!;
-      const row = table[s];
-      if (!row) continue;
-      const width = row.numBits > 0 ? 1 << row.numBits : 1;
-      const minNext = row.baseline;
-      const maxNext = row.baseline + width - 1;
-      if (maxNext < 0 || minNext >= tableSize) continue;
-      const start = minNext < 0 ? 0 : minNext;
-      const chosen = nextFrom[start]!;
-      if (chosen >= 0) {
-        if (chosen <= maxNext) {
-          curArr.push(s);
-          curNext[s] = chosen;
-        }
+  for (let i = rowCount - 2; i >= 0; i--) {
+    const code = codes[i] ?? -1;
+    if (code < 0 || code >= statesBySymbol.length) return null;
+    const candidates = statesBySymbol[code];
+    if (!candidates || candidates.length === 0) return null;
+    const curMaskOffset = maskOffset(i);
+    const nextMaskOffset = maskOffset(i + 1);
+    const curNextOffset = nextChoiceOffset(i);
+    for (let ci = 0; ci < candidates.length; ci++) {
+      const state = candidates[ci];
+      if (state === undefined) continue;
+      const chosenNext = findFirstSetBitInRange(
+        masks,
+        nextMaskOffset,
+        wordCount,
+        minNextByState[state]!,
+        maxNextByState[state]!,
+      );
+      if (chosenNext >= 0) {
+        setMaskBit(masks, curMaskOffset, state);
+        nextChoice[curNextOffset + state] = chosenNext;
       }
     }
-    if (curArr.length === 0) return null;
+    if (isMaskEmpty(masks, curMaskOffset, wordCount)) return null;
   }
 
-  const states: number[] = new Array(codes.length);
-  const updateBits: number[] = new Array(Math.max(0, codes.length - 1));
-  const firstArr = possible[0];
-  if (!firstArr || firstArr.length === 0) return null;
-  states[0] = firstArr[0]!;
-  for (let i = 0; i < codes.length - 1; i++) {
-    const cur = states[i]!;
-    const next = nextChoice[i]![cur];
-    if (next === undefined || next < 0) return null;
-    states[i + 1] = next;
-    const row = table[cur];
-    if (!row) return null;
-    updateBits[i] = next - row.baseline;
+  const states: number[] = new Array(rowCount);
+  const updateBits: number[] = new Array(Math.max(0, rowCount - 1));
+  let state = findFirstSetBit(masks, maskOffset(0), wordCount);
+  if (state < 0) return null;
+  states[0] = state;
+  for (let i = 0; i < rowCount - 1; i++) {
+    const nextState = nextChoice[nextChoiceOffset(i) + state] ?? -1;
+    if (nextState < 0) return null;
+    states[i + 1] = nextState;
+    updateBits[i] = nextState - baselineByState[state]!;
+    state = nextState;
   }
   return { states, updateBits };
 }

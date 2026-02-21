@@ -109,6 +109,7 @@ See [packages/cli/README.md](packages/cli/README.md) for full CLI documentation.
 ```bash
 pnpm install
 pnpm build
+pnpm --filter zstdify-tests run bench:fetch-data
 pnpm test
 pnpm check
 ```
@@ -120,19 +121,26 @@ All of the following run as part of the test suite (`pnpm test` / `pnpm vitest`)
 - **Round-trip**: `decompress(compress(x)) === x` for a variety of payloads and levels, plus property-based tests with [fast-check](https://fast-check.dev/).
 - **Conformance fixtures**: Pre-generated `.zst` files from the official zstd CLI (legacy fixtures and a committed decodecorpus-style **corpus** with manifest); we decompress and compare. See [packages/zstdify-tests/fixtures/README.md](packages/zstdify-tests/fixtures/README.md).
 - **Differential (zstd ↔ zstdify)**: We test zstd compress → zstdify decompress and zstdify compress → zstd decompress across payloads and levels.
+- **Differential (Node zstd ↔ zstdify)**: We test Node `node:zlib` zstd compress → zstdify decompress and zstdify compress → Node zstd decompress across synthetic plus local corpus-backed payloads.
 - **zstddec**: zstdify compress → [zstddec](https://www.npmjs.com/package/zstddec) decode at all compression levels (0–9) and with content checksum.
-- **Node zstd ratio**: Compare compression ratio of Node's built-in zstd vs zstdify on representative payloads and levels; assert zstdify is within ~10% of Node's compressed size.
+- **Node zstd ratio**: Compare compression ratio of Node's built-in zstd vs zstdify on representative synthetic plus local corpus-backed payloads and levels; assert zstdify is within ~10% of Node's compressed size.
 - **Corruption**: Truncation, checksum mismatch, invalid header bits, and related error paths.
 - **Compression regression**: Compressed sizes for fixed payloads are checked against golden values (ratio stability).
 - **Decompress robustness**: Each corpus fixture is decompressed in its own test (one test per file), so the suite tracks decompress behavior per input. See [upstream zstd TESTING.md](https://github.com/facebook/zstd/blob/dev/TESTING.md) for comparison.
 
 ## Benchmark: zstdify vs Node built-in zstd
 
-Throughput and compression ratio are compared against Node’s built-in `node:zlib` zstd on synthetic payloads (text, binary, repetitive) at levels 3, 5, and 9.
+Throughput and compression ratio are compared against Node’s built-in `node:zlib` zstd on a downloaded, local real-world corpus at compression level 6 (one entry per corpus file).
 
 ![Benchmark: compression and decompression throughput](packages/zstdify-tests/benchmarks/latest.svg)
 
-To regenerate the chart and tables (run benchmarks and render SVG):
+Before benchmarking, fetch local corpus files (downloaded and stored locally, not committed):
+
+```bash
+pnpm --filter zstdify-tests run bench:fetch-data
+```
+
+To regenerate the chart and tables (fetch corpus if needed, run benchmarks, render SVG):
 
 ```bash
 pnpm --filter zstdify-tests run bench:update

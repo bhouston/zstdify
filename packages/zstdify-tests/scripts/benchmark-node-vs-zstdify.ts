@@ -12,36 +12,12 @@ import zlib from 'node:zlib';
 import { Bench } from 'tinybench';
 import { ZSTDDecoder } from 'zstddec';
 import { compress, decompress } from 'zstdify';
+import { loadBenchCorpus } from './bench-corpus.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BENCH_DIR = path.join(__dirname, '..', 'benchmarks');
 
-function makeSeededPayload(size: number, seed: number): Uint8Array {
-  const data = new Uint8Array(size);
-  let x = seed >>> 0;
-  for (let i = 0; i < size; i++) {
-    x = (x * 1664525 + 1013904223) >>> 0;
-    data[i] = x & 0xff;
-  }
-  return data;
-}
-
-function makeBinaryPayload(size: number): Uint8Array {
-  return makeSeededPayload(size, 0x12345678);
-}
-
-const PAYLOADS: Array<{ id: string; data: Uint8Array }> = [
-  {
-    id: 'small-text',
-    data: new TextEncoder().encode('hello world hello world hello world hello world hello world '),
-  },
-  { id: 'binary-1k', data: makeSeededPayload(1024, 42) },
-  { id: 'binary-4k', data: makeBinaryPayload(4 * 1024) },
-  { id: 'binary-64k', data: makeBinaryPayload(64 * 1024) },
-  { id: 'repeated-byte', data: new Uint8Array(4096).fill(0x61) },
-];
-
-const LEVELS = [3, 5, 9];
+const LEVELS = [6];
 
 function nodeCompress(data: Uint8Array, level: number): Buffer {
   const params: Record<number, number> = {
@@ -52,6 +28,7 @@ function nodeCompress(data: Uint8Array, level: number): Buffer {
 
 interface ResultRow {
   payloadId: string;
+  payloadCategory: string;
   payloadBytes: number;
   level: number;
   compressZstdifyMs: number;
@@ -69,18 +46,27 @@ function mbps(bytes: number, ms: number): number {
 }
 
 async function main(): Promise<void> {
+  console.log('Benchmark script started (build finished).');
+  console.log('Initializing zstddec...');
   const decoder = new ZSTDDecoder();
   await decoder.init();
+  console.log('Loading benchmark corpus...');
+  const payloads = loadBenchCorpus();
+  console.log(`Loaded ${payloads.length} payloads. Running benchmarks (${payloads.length} × ${LEVELS.length} = ${payloads.length * LEVELS.length} runs)...`);
 
   if (!fs.existsSync(BENCH_DIR)) {
     fs.mkdirSync(BENCH_DIR, { recursive: true });
   }
 
   const rows: ResultRow[] = [];
+  let runIndex = 0;
+  const totalRuns = payloads.length * LEVELS.length;
 
-  for (const { id: payloadId, data } of PAYLOADS) {
+  for (const { id: payloadId, category: payloadCategory, data } of payloads) {
     const payloadBytes = data.length;
     for (const level of LEVELS) {
+      runIndex += 1;
+      console.log(`  [${runIndex}/${totalRuns}] ${payloadId} level ${level} (${(payloadBytes / 1024 / 1024).toFixed(2)} MiB)...`);
       const zstdifyCompressed = compress(data, { level });
       const nodeCompressed = nodeCompress(data, level);
       const zstdifyDecompressInput = zstdifyCompressed;
@@ -127,6 +113,7 @@ async function main(): Promise<void> {
 
       rows.push({
         payloadId,
+        payloadCategory,
         payloadBytes,
         level,
         compressZstdifyMs,
@@ -147,6 +134,7 @@ async function main(): Promise<void> {
     rows,
     throughput: rows.map((r) => ({
       payloadId: r.payloadId,
+      payloadCategory: r.payloadCategory,
       payloadBytes: r.payloadBytes,
       level: r.level,
       compressZstdifyMbps: mbps(r.payloadBytes, r.compressZstdifyMs),
@@ -171,18 +159,19 @@ async function main(): Promise<void> {
     '## Throughput (MB/s)',
     '',
     '| Payload     | Level | Compress zstdify | Compress Node | Decompress zstdify | Decompress Node | Decompress zstddec |',
-    '|------------|-------|------------------|---------------|-------------------|-----------------|---------------------|',
+    '|-------------|----------|-------|------------------|---------------|-------------------|-----------------|---------------------|',
     ...summary.throughput.map(
       (t) =>
-        `| ${t.payloadId.padEnd(10)} | ${t.level} | ${t.compressZstdifyMbps.toFixed(2)} | ${t.compressNodeMbps.toFixed(2)} | ${t.decompressZstdifyMbps.toFixed(2)} | ${t.decompressNodeMbps.toFixed(2)} | ${t.decompressZstddecMbps.toFixed(2)} |`,
+        `| ${t.payloadId.padEnd(11)} | ${t.payloadCategory.padEnd(8)} | ${t.level} | ${t.compressZstdifyMbps.toFixed(2)} | ${t.compressNodeMbps.toFixed(2)} | ${t.decompressZstdifyMbps.toFixed(2)} | ${t.decompressNodeMbps.toFixed(2)} | ${t.decompressZstddecMbps.toFixed(2)} |`,
     ),
     '',
     '## Compression ratio (compressed/original)',
     '',
-    '| Payload     | Level | zstdify | Node |',
-    '|------------|-------|---------|------|',
+    '| Payload     | Category | Level | zstdify | Node |',
+    '|-------------|----------|-------|---------|------|',
     ...summary.throughput.map(
-      (t) => `| ${t.payloadId.padEnd(10)} | ${t.level} | ${t.ratioZstdify.toFixed(4)} | ${t.ratioNode.toFixed(4)} |`,
+      (t) =>
+        `| ${t.payloadId.padEnd(11)} | ${t.payloadCategory.padEnd(8)} | ${t.level} | ${t.ratioZstdify.toFixed(4)} | ${t.ratioNode.toFixed(4)} |`,
     ),
     '',
   ].join('\n');
