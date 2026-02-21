@@ -348,6 +348,9 @@ function buildStatePath(
     lastArr.push(lastCandidates[j]!);
   }
   if (lastArr.length === 0) return null;
+  if (codes.length === 1) {
+    return { states: [lastArr[0]!], updateBits: [] };
+  }
 
   for (let i = codes.length - 2; i >= 0; i--) {
     const candidates = statesByCode[codes[i] ?? -1] ?? [];
@@ -488,16 +491,22 @@ function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Ar
 }
 
 export function buildCompressedBlockPayload(literals: Uint8Array, sequences: Sequence[]): Uint8Array | null {
-  const literalCandidates = [
-    buildSingleSymbolCompressedLiterals(literals),
-    buildGeneralCompressedLiterals(literals),
-    buildRawLiteralsSection(literals),
-  ].filter((section): section is Uint8Array => section !== null);
-  if (literalCandidates.length === 0) return null;
-  let literalsSection = literalCandidates[0]!;
-  for (const candidate of literalCandidates) {
-    if (candidate.length < literalsSection.length) {
-      literalsSection = candidate;
+  const literalsLength = literals.length;
+  const rawSection = buildRawLiteralsSection(literals);
+  if (!rawSection) return null;
+  let literalsSection = rawSection;
+
+  if (literalsLength >= 8 && literalsLength <= 1023) {
+    const single = buildSingleSymbolCompressedLiterals(literals);
+    if (single && single.length < literalsSection.length) {
+      literalsSection = single;
+    }
+  }
+
+  if (literalsLength >= 16 && literalsLength <= 1023) {
+    const general = buildGeneralCompressedLiterals(literals);
+    if (general && general.length < literalsSection.length) {
+      literalsSection = general;
     }
   }
   const seqSection = buildPredefinedSequenceSection(sequences);

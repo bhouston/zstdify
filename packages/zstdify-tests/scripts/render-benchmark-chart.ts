@@ -55,8 +55,10 @@ function main(): void {
     mbps: number;
   }> = [];
 
+  let index = 0;
   for (const t of summary.throughput) {
     const label = `${t.payloadId} L${t.level}`;
+    if( index % 3 === 0 ) {
     compressRows.push(
       { label, impl: 'zstdify', mbps: t.compressZstdifyMbps },
       { label, impl: 'Node', mbps: t.compressNodeMbps },
@@ -68,6 +70,8 @@ function main(): void {
     if (t.decompressZstddecMbps !== undefined) {
       decompressRows.push({ label, impl: 'zstddec', mbps: t.decompressZstddecMbps });
     }
+  }
+    index ++;
   }
 
   // Side-by-side grouped bars: xOffset places bars next to each other per category.
