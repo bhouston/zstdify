@@ -141,6 +141,8 @@ To regenerate the chart and tables (run benchmarks and render SVG):
 pnpm --filter zstdify-tests run bench:update
 ```
 
+`bench:update` (and other `bench:*` scripts) now runs `bench:prepare` first, which rebuilds `zstdify` so benchmarks always use freshly compiled `dist` output.
+
 ### Bundle size benchmark (Rollup)
 
 | Target | Raw | Gzip | Brotli |

@@ -30,7 +30,7 @@ export function parseLiteralsSectionHeader(
     throw new ZstdError('Literals section header truncated', 'corruption_detected');
   }
 
-  const b0 = data[offset] ?? 0;
+  const b0 = data[offset]!;
   const blockType = (b0 & 3) as LiteralsBlockType;
   const sizeFormat = (b0 >> 2) & 3;
 
@@ -46,7 +46,7 @@ export function parseLiteralsSectionHeader(
       if (offset + 2 > data.length) {
         throw new ZstdError('Literals section header truncated', 'corruption_detected');
       }
-      const b1 = data[offset + 1] ?? 0;
+      const b1 = data[offset + 1]!;
       const regeneratedSize = (b0 >> 4) + (b1 << 4);
       return {
         header: { blockType, regeneratedSize, headerSize: 2, numStreams: 1 },
@@ -57,8 +57,8 @@ export function parseLiteralsSectionHeader(
       if (offset + 3 > data.length) {
         throw new ZstdError('Literals section header truncated', 'corruption_detected');
       }
-      const b1 = data[offset + 1] ?? 0;
-      const b2 = data[offset + 2] ?? 0;
+      const b1 = data[offset + 1]!;
+      const b2 = data[offset + 2]!;
       const regeneratedSize = (b0 >> 4) + (b1 << 4) + (b2 << 12);
       return {
         header: { blockType, regeneratedSize, headerSize: 3, numStreams: 1 },
@@ -110,7 +110,7 @@ export function decodeRLELiterals(data: Uint8Array, offset: number, size: number
   if (offset >= data.length) {
     throw new ZstdError('RLE literals truncated', 'corruption_detected');
   }
-  const byte = data[offset] ?? 0;
+  const byte = data[offset]!;
   const result = new Uint8Array(size);
   result.fill(byte);
   return result;
@@ -135,28 +135,60 @@ function weightsToHuffmanTable(weights: number[]): {
     throw new ZstdError('Invalid Huffman weights: cannot complete to power of 2', 'corruption_detected');
   }
   const lastWeight = 32 - Math.clz32(remainder);
-  const fullWeights = [...weights, lastWeight];
-  while (fullWeights.length < 256) {
-    fullWeights.push(0);
+  const fullWeights = new Array<number>(256).fill(0);
+  for (let i = 0; i < weights.length; i++) {
+    fullWeights[i] = weights[i] ?? 0;
   }
+  fullWeights[weights.length] = lastWeight;
 
   const numBits = weightsToNumBits(fullWeights, maxNumBits);
   const table = buildHuffmanDecodeTable(numBits, maxNumBits);
   return { table, maxNumBits };
 }
 
-function decodeHuffmanStreamToEnd(
+function decodeHuffmanStreamByCountInto(
   data: Uint8Array,
   streamOffset: number,
   streamLength: number,
   table: ReturnType<typeof buildHuffmanDecodeTable>,
   maxNumBits: number,
-): Uint8Array {
+  out: Uint8Array,
+  outOffset: number,
+  numSymbols: number,
+): number {
+  if (numSymbols === 0) return 0;
+  if (streamLength <= 0) {
+    throw new ZstdError('Huffman stream truncated', 'corruption_detected');
+  }
+  const reader = new BitReaderReverse(data, streamOffset, streamLength);
+  reader.skipPadding();
+  let written = 0;
+  for (let i = 0; i < numSymbols; i++) {
+    const peek = reader.readBits(maxNumBits);
+    const row = table[peek];
+    if (!row) {
+      throw new ZstdError('Huffman invalid code', 'corruption_detected');
+    }
+    out[outOffset + written] = row.symbol;
+    written++;
+  }
+  return written;
+}
+
+function decodeHuffmanStreamToEndInto(
+  data: Uint8Array,
+  streamOffset: number,
+  streamLength: number,
+  table: ReturnType<typeof buildHuffmanDecodeTable>,
+  maxNumBits: number,
+  out: Uint8Array,
+  outOffset: number,
+): number {
   if (streamLength <= 0) {
     throw new ZstdError('Huffman stream truncated', 'corruption_detected');
   }
   const stream = data.subarray(streamOffset, streamOffset + streamLength);
-  const lastByte = stream[stream.length - 1] ?? 0;
+  const lastByte = stream[stream.length - 1]!;
   if (lastByte === 0) {
     throw new ZstdError('Huffman invalid end marker', 'corruption_detected');
   }
@@ -170,24 +202,28 @@ function decodeHuffmanStreamToEnd(
     let value = 0;
     for (let i = 0; i < numBits; i++) {
       const abs = bitOffset + i;
-      if (abs < 0) continue;
+      if (abs < 0 || abs >= streamLength * 8) continue;
       const byteIndex = abs >>> 3;
       const bitInByte = abs & 7;
-      const bit = ((stream[byteIndex] ?? 0) >>> bitInByte) & 1;
+      const bit = (stream[byteIndex]! >>> bitInByte) & 1;
       value |= bit << i;
     }
     return value;
   };
 
-  const out: number[] = [];
   const mask = (1 << maxNumBits) - 1;
   let state = readBitsZeroExtended(maxNumBits);
+  let written = 0;
   while (bitOffset > -maxNumBits) {
     const row = table[state];
     if (!row) {
       throw new ZstdError('Huffman invalid code', 'corruption_detected');
     }
-    out.push(row.symbol);
+    if (outOffset + written >= out.length) {
+      throw new ZstdError('Huffman literals size mismatch', 'corruption_detected');
+    }
+    out[outOffset + written] = row.symbol;
+    written++;
     const nb = row.numBits;
     const rest = nb > 0 ? readBitsZeroExtended(nb) : 0;
     state = ((state << nb) & mask) + rest;
@@ -195,33 +231,7 @@ function decodeHuffmanStreamToEnd(
   if (bitOffset !== -maxNumBits) {
     throw new ZstdError('Huffman stream did not end cleanly', 'corruption_detected');
   }
-  return new Uint8Array(out);
-}
-
-function decodeHuffmanStreamByCount(
-  data: Uint8Array,
-  streamOffset: number,
-  streamLength: number,
-  table: ReturnType<typeof buildHuffmanDecodeTable>,
-  maxNumBits: number,
-  numSymbols: number,
-): Uint8Array {
-  if (numSymbols === 0) return new Uint8Array(0);
-  if (streamLength <= 0) {
-    throw new ZstdError('Huffman stream truncated', 'corruption_detected');
-  }
-  const reader = new BitReaderReverse(data, streamOffset, streamLength);
-  reader.skipPadding();
-  const out = new Uint8Array(numSymbols);
-  for (let i = 0; i < numSymbols; i++) {
-    const peek = reader.readBits(maxNumBits);
-    const row = table[peek];
-    if (!row) {
-      throw new ZstdError('Huffman invalid code', 'corruption_detected');
-    }
-    out[i] = row.symbol;
-  }
-  return out;
+  return written;
 }
 
 /**
@@ -245,7 +255,7 @@ export function decodeCompressedLiterals(
     throw new ZstdError('Huffman tree description truncated', 'corruption_detected');
   }
 
-  const headerByte = data[pos] ?? 0;
+  const headerByte = data[pos]!;
   pos++;
 
   let weights: number[];
@@ -275,22 +285,23 @@ export function decodeCompressedLiterals(
   let outPos = 0;
 
   if (numStreams === 1) {
-    const lit = decodeHuffmanStreamByCount(
+    decodeHuffmanStreamByCountInto(
       data,
       pos,
       totalStreamsSize,
       huffmanTable.table,
       huffmanTable.maxNumBits,
+      result,
+      0,
       regeneratedSize,
     );
-    result.set(lit);
   } else {
     if (totalStreamsSize < 10) {
       throw new ZstdError('4-stream mode requires at least 10 bytes', 'corruption_detected');
     }
-    const s1 = (data[pos] ?? 0) | ((data[pos + 1] ?? 0) << 8);
-    const s2 = (data[pos + 2] ?? 0) | ((data[pos + 3] ?? 0) << 8);
-    const s3 = (data[pos + 4] ?? 0) | ((data[pos + 5] ?? 0) << 8);
+    const s1 = data[pos]! | (data[pos + 1]! << 8);
+    const s2 = data[pos + 2]! | (data[pos + 3]! << 8);
+    const s3 = data[pos + 4]! | (data[pos + 5]! << 8);
     const stream1Size = s1;
     const stream2Size = s2;
     const stream3Size = s3;
@@ -305,9 +316,16 @@ export function decodeCompressedLiterals(
     let streamOffset = pos + 6;
 
     const decodeStream = (size: number) => {
-      const lit = decodeHuffmanStreamToEnd(data, streamOffset, size, huffmanTable.table, huffmanTable.maxNumBits);
-      result.set(lit, outPos);
-      outPos += lit.length;
+      const written = decodeHuffmanStreamToEndInto(
+        data,
+        streamOffset,
+        size,
+        huffmanTable.table,
+        huffmanTable.maxNumBits,
+        result,
+        outPos,
+      );
+      outPos += written;
       streamOffset += size;
     };
 
@@ -343,22 +361,23 @@ export function decodeTreelessLiterals(
   let pos = offset;
 
   if (numStreams === 1) {
-    const lit = decodeHuffmanStreamByCount(
+    decodeHuffmanStreamByCountInto(
       data,
       pos,
       compressedSize,
       huffmanTable.table,
       huffmanTable.maxNumBits,
+      result,
+      0,
       regeneratedSize,
     );
-    result.set(lit);
   } else {
     if (compressedSize < 10) {
       throw new ZstdError('4-stream mode requires at least 10 bytes', 'corruption_detected');
     }
-    const s1 = (data[pos] ?? 0) | ((data[pos + 1] ?? 0) << 8);
-    const s2 = (data[pos + 2] ?? 0) | ((data[pos + 3] ?? 0) << 8);
-    const s3 = (data[pos + 4] ?? 0) | ((data[pos + 5] ?? 0) << 8);
+    const s1 = data[pos]! | (data[pos + 1]! << 8);
+    const s2 = data[pos + 2]! | (data[pos + 3]! << 8);
+    const s3 = data[pos + 4]! | (data[pos + 5]! << 8);
     const stream1Size = s1;
     const stream2Size = s2;
     const stream3Size = s3;
@@ -373,9 +392,16 @@ export function decodeTreelessLiterals(
     pos += 6;
 
     const decodeStream = (size: number) => {
-      const lit = decodeHuffmanStreamToEnd(data, pos, size, huffmanTable.table, huffmanTable.maxNumBits);
-      result.set(lit, outPos);
-      outPos += lit.length;
+      const written = decodeHuffmanStreamToEndInto(
+        data,
+        pos,
+        size,
+        huffmanTable.table,
+        huffmanTable.maxNumBits,
+        result,
+        outPos,
+      );
+      outPos += written;
       pos += size;
     };
 

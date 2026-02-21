@@ -12,3 +12,4 @@ packages/zstdify-tests/benchmarks/bundle-size.latest.md
 packages/zstdify-tests/benchmarks/bundle-size.latest.json
 packages/zstdify-tests/benchmarks/latest.json
 .gitignore
+zstdify-bench.cpuprofile
