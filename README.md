@@ -141,8 +141,8 @@ pnpm --filter zstdify-tests run bench:update
 
 | Target | Raw | Gzip | Brotli |
 |---|---:|---:|---:|
-| zstdify/compress | 13.13 KiB | 4.91 KiB | 4.43 KiB |
-| zstdify/decompress | 24.52 KiB | 7.46 KiB | 6.62 KiB |
+| zstdify/compress | 13.90 KiB | 5.27 KiB | 4.75 KiB |
+| zstdify/decompress | 27.70 KiB | 8.63 KiB | 7.67 KiB |
 | zstddec decoder + wasm | 127.37 KiB | 49.69 KiB | 40.66 KiB |
 
 To regenerate this snapshot:
