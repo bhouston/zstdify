@@ -131,17 +131,11 @@ Throughput and compression ratio are compared against Node’s built-in `node:zl
 
 ![Benchmark: compression and decompression throughput](packages/zstdify-tests/benchmarks/latest.svg)
 
-- **Compression**: Node’s native zstd is faster (often 5–10×) due to native code; zstdify is pure JS and trades speed for portability.
-- **Decompression**: Same pattern—Node is faster; zstdify remains compatible and dependency-free.
-- **Ratio**: Compression ratios are very close; the test suite asserts zstdify is within ~10% of Node’s compressed size on the same inputs.
-
 To regenerate the chart and tables (run benchmarks and render SVG):
 
 ```bash
 pnpm --filter zstdify-tests run bench:update
 ```
-
-`bench:update` (and other `bench:*` scripts) now runs `bench:prepare` first, which rebuilds `zstdify` so benchmarks always use freshly compiled `dist` output.
 
 ### Bundle size benchmark (Rollup)
 
