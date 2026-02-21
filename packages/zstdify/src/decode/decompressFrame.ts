@@ -27,7 +27,8 @@ export function decompressFrame(
   validateChecksum = true,
 ): { output: Uint8Array; bytesConsumed: number } {
   let pos = offset + 4 + header.headerSize;
-  const chunks: Uint8Array[] = [];
+  const knownOutputSize = header.contentSize ?? null;
+  let outputBuffer = knownOutputSize !== null ? new Uint8Array(knownOutputSize) : new Uint8Array(0);
   let totalSize = 0;
   const repOffsets: [number, number, number] = dictionary?.repOffsets
     ? [dictionary.repOffsets[0], dictionary.repOffsets[1], dictionary.repOffsets[2]]
@@ -39,6 +40,31 @@ export function decompressFrame(
   } | null = dictionary?.huffmanTable ?? null;
   let prevSeqTables: SequenceTables | null = dictionary?.sequenceTables ?? null;
 
+  const ensureOutputCapacity = (additional: number): void => {
+    const needed = totalSize + additional;
+    if (needed <= outputBuffer.length) {
+      return;
+    }
+    let nextCapacity = outputBuffer.length === 0 ? 64 * 1024 : outputBuffer.length;
+    while (nextCapacity < needed) {
+      nextCapacity *= 2;
+    }
+    const grown = new Uint8Array(nextCapacity);
+    if (totalSize > 0) {
+      grown.set(outputBuffer.subarray(0, totalSize), 0);
+    }
+    outputBuffer = grown;
+  };
+
+  const appendOutput = (chunk: Uint8Array): void => {
+    if (chunk.length === 0) {
+      return;
+    }
+    ensureOutputCapacity(chunk.length);
+    outputBuffer.set(chunk, totalSize);
+    totalSize += chunk.length;
+  };
+
   while (true) {
     if (pos + 3 > data.length) {
       throw new ZstdError('Block header truncated', 'corruption_detected');
@@ -48,14 +74,12 @@ export function decompressFrame(
 
     if (block.blockType === 0) {
       const literals = decodeRawLiterals(data, pos, block.blockSize);
-      chunks.push(literals);
-      totalSize += literals.length;
+      appendOutput(literals);
       appendToHistoryWindow(history, literals);
       pos += block.blockSize;
     } else if (block.blockType === 1) {
       const literals = decodeRLELiterals(data, pos, block.blockSize);
-      chunks.push(literals);
-      totalSize += literals.length;
+      appendOutput(literals);
       appendToHistoryWindow(history, literals);
       pos += 1;
     } else if (block.blockType === 2) {
@@ -112,8 +136,7 @@ export function decompressFrame(
         }
       }
 
-      chunks.push(output);
-      totalSize += output.length;
+      appendOutput(output);
       appendToHistoryWindow(history, output);
       pos += block.blockSize;
     } else {
@@ -127,7 +150,7 @@ export function decompressFrame(
     if (block.lastBlock) break;
   }
 
-  const output = concatenateChunks(chunks);
+  const output = outputBuffer.subarray(0, totalSize);
   if (header.contentSize !== null && output.length !== header.contentSize) {
     throw new ZstdError('Frame content size mismatch', 'corruption_detected');
   }
@@ -147,17 +170,4 @@ export function decompressFrame(
   }
 
   return { output, bytesConsumed: pos - offset };
-}
-
-function concatenateChunks(chunks: Uint8Array[]): Uint8Array {
-  if (chunks.length === 0) return new Uint8Array(0);
-  if (chunks.length === 1) return chunks[0]!;
-  const total = chunks.reduce((s, c) => s + c.length, 0);
-  const result = new Uint8Array(total);
-  let pos = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, pos);
-    pos += chunk.length;
-  }
-  return result;
 }

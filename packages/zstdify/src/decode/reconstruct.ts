@@ -73,7 +73,10 @@ export function executeSequences(
 ): Uint8Array {
   const history = isHistoryWindow(historyInput) ? historyInput : createHistoryWindow(windowSize, historyInput);
   // Sequence literals are slices of `literals`, so only matches expand output size.
-  const totalSize = literals.length + sequences.reduce((s, seq) => s + seq.matchLength, 0);
+  let totalSize = literals.length;
+  for (const seq of sequences) {
+    totalSize += seq.matchLength;
+  }
   const historyLength = history.length;
   const historyCap = history.buffer.length;
   const historyOldestPos = historyCap > 0 ? (history.writePos - historyLength + historyCap) % historyCap : 0;
@@ -133,14 +136,38 @@ export function executeSequences(
       if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
         throw new ZstdError('Invalid history read', 'corruption_detected');
       }
-      for (let i = 0; i < historyCopyLen; i++) {
-        buffer[outPos++] = historyBuffer[(historyOldestPos + historyStart + i) % historyCap]!;
+      let physicalStart = historyOldestPos + historyStart;
+      if (physicalStart >= historyCap) {
+        physicalStart -= historyCap;
+      }
+      const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
+      buffer.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
+      outPos += firstHistoryChunk;
+      const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
+      if (remainingHistoryChunk > 0) {
+        buffer.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
+        outPos += remainingHistoryChunk;
       }
       remainingMatch -= historyCopyLen;
     }
-    for (let i = 0; i < remainingMatch; i++) {
-      buffer[outPos] = buffer[outPos - offset]!;
-      outPos++;
+    if (remainingMatch > 0) {
+      let copyStart = outPos - offset;
+      if (offset >= remainingMatch) {
+        buffer.set(buffer.subarray(copyStart, copyStart + remainingMatch), outPos);
+        outPos += remainingMatch;
+      } else {
+        // Handle overlapping copies with exponentially growing chunks.
+        let copied = offset;
+        buffer.set(buffer.subarray(copyStart, copyStart + copied), outPos);
+        outPos += copied;
+        while (copied < remainingMatch) {
+          const toCopy = Math.min(copied, remainingMatch - copied);
+          copyStart = outPos - copied;
+          buffer.set(buffer.subarray(copyStart, copyStart + toCopy), outPos);
+          outPos += toCopy;
+          copied += toCopy;
+        }
+      }
     }
     if (isNonRepeat) {
       repOffsets[2] = repOffsets[1];

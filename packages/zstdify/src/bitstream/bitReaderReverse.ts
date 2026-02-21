@@ -6,6 +6,11 @@
  * - extract bits in little-endian bit order.
  */
 
+const BIT_MASKS: number[] = Array.from({ length: 33 }, (_, i) => {
+  if (i === 32) return 0xffffffff;
+  return ((1 << i) - 1) >>> 0;
+});
+
 export class BitReaderReverse {
   private readonly data: Uint8Array;
   private readonly startBit: number;
@@ -29,7 +34,32 @@ export class BitReaderReverse {
     }
 
     const requestedStart = this.bitOffset - n;
-    this.bitOffset = Math.max(this.startBit, requestedStart);
+    const clampedStart = requestedStart < this.startBit ? this.startBit : requestedStart;
+    this.bitOffset = clampedStart;
+
+    if (requestedStart >= this.startBit) {
+      const byteIndex = requestedStart >>> 3;
+      const bitInByte = requestedStart & 7;
+      const readWord = (idx: number): number =>
+        (((this.data[idx] ?? 0) |
+          ((this.data[idx + 1] ?? 0) << 8) |
+          ((this.data[idx + 2] ?? 0) << 16) |
+          ((this.data[idx + 3] ?? 0) << 24)) >>>
+          0);
+
+      const word0 = readWord(byteIndex);
+      if (bitInByte + n <= 32) {
+        const value = word0 >>> bitInByte;
+        return n === 32 ? value >>> 0 : (value & BIT_MASKS[n]!) >>> 0;
+      }
+
+      const low = word0 >>> bitInByte;
+      const highBits = n - (32 - bitInByte);
+      const word1 = readWord(byteIndex + 4);
+      const high = ((word1 & BIT_MASKS[highBits]!) << (32 - bitInByte)) >>> 0;
+      const merged = (low | high) >>> 0;
+      return n === 32 ? merged : (merged & BIT_MASKS[n]!) >>> 0;
+    }
 
     let value = 0;
     for (let i = 0; i < n; i++) {
