@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
 import { BitWriter } from '../bitstream/bitWriter.js';
+import { buildHuffmanDecodeTable, decodeHuffmanSymbol, weightsToNumBits } from '../entropy/huffman.js';
 import { decodeCompressedLiterals, decodeTreelessLiterals, parseLiteralsSectionHeader } from './literals.js';
 
 describe('literals header parsing', () => {
@@ -70,5 +72,76 @@ describe('decodeTreelessLiterals', () => {
     const result = decodeTreelessLiterals(treelessData, 0, 1, 1, 1, huffmanTable);
     expect(result.literals).toEqual(new Uint8Array([0]));
     expect(result.bytesRead).toBe(1);
+  });
+});
+
+describe('decodeCompressedLiterals regression', () => {
+  it('single-stream decoding consumes symbol bit-length (not max bit-length)', () => {
+    // Direct weights for 3 symbols: [1,1,2], plus computed last symbol.
+    // This yields mixed Huffman bit-lengths (max=3, with some symbols using 2 bits).
+    const weights = [1, 1, 2];
+    let partialSum = 0;
+    for (const w of weights) {
+      partialSum += 1 << (w - 1);
+    }
+    const maxNumBits = 32 - Math.clz32(partialSum);
+    const remainder = (1 << maxNumBits) - partialSum;
+    const lastWeight = 32 - Math.clz32(remainder);
+    const fullWeights = [...weights, lastWeight];
+    const table = buildHuffmanDecodeTable(weightsToNumBits(fullWeights, maxNumBits), maxNumBits);
+
+    const decodeRef = (streamByte: number, count: number): Uint8Array | null => {
+      try {
+        const out = new Uint8Array(count);
+        const reader = new BitReaderReverse(new Uint8Array([streamByte]), 0, 1);
+        reader.skipPadding();
+        for (let i = 0; i < count; i++) {
+          out[i] = decodeHuffmanSymbol(table, maxNumBits, reader);
+        }
+        return out;
+      } catch {
+        return null;
+      }
+    };
+
+    // Historical buggy behavior: consumes maxNumBits for every symbol.
+    const decodeBuggy = (streamByte: number, count: number): Uint8Array | null => {
+      try {
+        const out = new Uint8Array(count);
+        const reader = new BitReaderReverse(new Uint8Array([streamByte]), 0, 1);
+        reader.skipPadding();
+        for (let i = 0; i < count; i++) {
+          const peek = reader.readBits(maxNumBits);
+          const row = table[peek];
+          if (!row) return null;
+          out[i] = row.symbol;
+        }
+        return out;
+      } catch {
+        return null;
+      }
+    };
+
+    const targetCount = 2;
+    let chosenByte = -1;
+    let expected: Uint8Array | null = null;
+    for (let b = 1; b <= 0xff; b++) {
+      const ref = decodeRef(b, targetCount);
+      const buggy = decodeBuggy(b, targetCount);
+      if (!ref || !buggy) continue;
+      if (ref[0] === ref[1]) continue;
+      if (ref[0] === buggy[0] && ref[1] === buggy[1]) continue;
+      chosenByte = b;
+      expected = ref;
+      break;
+    }
+
+    expect(chosenByte).toBeGreaterThan(0);
+    expect(expected).not.toBeNull();
+
+    const treeHeader = new Uint8Array([130, 0x11, 0x20]); // headerByte + direct-weight bytes
+    const payload = new Uint8Array([...treeHeader, chosenByte]);
+    const decoded = decodeCompressedLiterals(payload, 0, payload.length, targetCount, 1);
+    expect(decoded.literals).toEqual(expected!);
   });
 });

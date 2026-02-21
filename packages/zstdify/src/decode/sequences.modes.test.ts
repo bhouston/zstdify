@@ -45,6 +45,18 @@ describe('decodeSequences modes and extended counts', () => {
     ]);
     const result = decodeSequences(data, 0, data.length, seeded.tables);
     expect(result.sequences.length).toBe(1);
+    expect(result.tables.llTable).toBe(seeded.tables.llTable);
+    expect(result.tables.ofTable).toBe(seeded.tables.ofTable);
+    expect(result.tables.mlTable).toBe(seeded.tables.mlTable);
+  });
+
+  it('rejects repeat mode when previous tables are missing', () => {
+    const data = new Uint8Array([
+      0x01, // numSequences
+      0xfc, // ll=3, of=3, ml=3 (repeat)
+      0x80, // minimal non-empty bitstream byte
+    ]);
+    expect(() => decodeSequences(data, 0, data.length, null)).toThrowError(/repeat_mode without previous table/i);
   });
 
   it('rejects invalid state row when repeated tables are structurally invalid', () => {

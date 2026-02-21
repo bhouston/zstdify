@@ -165,10 +165,15 @@ function decodeHuffmanStreamByCountInto(
   reader.skipPadding();
   let written = 0;
   for (let i = 0; i < numSymbols; i++) {
+    // Peek max bits to index the table, then consume only the symbol bit length.
     const peek = reader.readBits(maxNumBits);
     const row = table[peek];
     if (!row) {
       throw new ZstdError('Huffman invalid code', 'corruption_detected');
+    }
+    const overshoot = maxNumBits - row.numBits;
+    if (overshoot > 0) {
+      reader.unreadBits(overshoot);
     }
     out[outOffset + written] = row.symbol;
     written++;
