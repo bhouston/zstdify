@@ -52,8 +52,7 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
           const payload = buildCompressedBlockPayload(plan.literals, plan.sequences);
           if (payload) {
             const compressed = writeCompressedBlock(payload, last);
-            const raw = writeRawBlock(input, offset, size, last);
-            if (compressed.length < raw.length) {
+            if (compressed.length < 3 + size) {
               chunks.push(compressed);
               offset += size;
               blockIndex++;

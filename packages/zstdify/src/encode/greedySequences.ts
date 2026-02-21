@@ -24,13 +24,9 @@ function hash3(data: Uint8Array, pos: number): number {
 }
 
 /** Compare 4-byte words where safe, then byte tail. */
-function matchLength(data: Uint8Array, a: number, b: number): number {
+function matchLength(data: Uint8Array, dv: DataView | null, a: number, b: number): number {
   const len = data.length - a;
   let n = 0;
-  const dv =
-    data.buffer && data.byteLength >= 4
-      ? new DataView(data.buffer, data.byteOffset, data.byteLength)
-      : null;
   if (dv && len >= 4) {
     const end = a + len;
     let pa = a;
@@ -69,6 +65,7 @@ export function buildGreedySequences(input: Uint8Array): GreedyEncodeResult {
   let literalOut = 0;
   let anchor = 0;
   let pos = 0;
+  const dv = input.byteLength >= 4 ? new DataView(input.buffer, input.byteOffset, input.byteLength) : null;
 
   while (pos + MIN_MATCH <= input.length) {
     const h = hash3(input, pos);
@@ -89,7 +86,7 @@ export function buildGreedySequences(input: Uint8Array): GreedyEncodeResult {
       pos++;
       continue;
     }
-    const len = matchLength(input, pos, candidate);
+    const len = matchLength(input, dv, pos, candidate);
     if (len < MIN_MATCH) {
       pos++;
       continue;

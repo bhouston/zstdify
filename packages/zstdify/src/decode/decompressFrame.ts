@@ -90,7 +90,9 @@ export function decompressFrame(
       }
       ensureOutputCapacity(block.blockSize);
       outputBuffer.set(data.subarray(pos, pos + block.blockSize), totalSize);
-      appendRangeToHistoryWindow(history, data, pos, block.blockSize);
+      if (!block.lastBlock) {
+        appendRangeToHistoryWindow(history, data, pos, block.blockSize);
+      }
       totalSize += block.blockSize;
       pos += block.blockSize;
     } else if (block.blockType === 1) {
@@ -100,7 +102,9 @@ export function decompressFrame(
       const byte = data[pos]!;
       ensureOutputCapacity(block.blockSize);
       outputBuffer.fill(byte, totalSize, totalSize + block.blockSize);
-      appendRLEToHistoryWindow(history, byte, block.blockSize);
+      if (!block.lastBlock) {
+        appendRLEToHistoryWindow(history, byte, block.blockSize);
+      }
       totalSize += block.blockSize;
       pos += 1;
     } else if (block.blockType === 2) {
@@ -146,13 +150,26 @@ export function decompressFrame(
       const seqSectionSize = block.blockSize - litBytesConsumed;
       if (seqSectionSize <= 0) {
         appendOutput(literals);
-        appendToHistoryWindow(history, literals);
+        if (!block.lastBlock) {
+          appendToHistoryWindow(history, literals);
+        }
       } else {
-        const seqResult = decodeSequences(blockContent, litBytesConsumed, seqSectionSize, prevSeqTables);
+        const seqResult = decodeSequences(
+          blockContent,
+          litBytesConsumed,
+          seqSectionSize,
+          prevSeqTables,
+          reuseContext?._sequences,
+        );
+        if (reuseContext) {
+          reuseContext._sequences = seqResult.sequences;
+        }
         prevSeqTables = seqResult.tables;
         if (seqResult.sequences.length === 0) {
           appendOutput(literals);
-          appendToHistoryWindow(history, literals);
+          if (!block.lastBlock) {
+            appendToHistoryWindow(history, literals);
+          }
         } else {
           let decodedSize = literals.length;
           for (const seq of seqResult.sequences) {
@@ -168,9 +185,9 @@ export function decompressFrame(
             start,
             repOffsets,
             history,
+            !block.lastBlock,
           );
           totalSize += written;
-          appendRangeToHistoryWindow(history, outputBuffer, start, written);
         }
       }
       pos += block.blockSize;

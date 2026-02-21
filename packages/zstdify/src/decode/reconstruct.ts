@@ -41,6 +41,7 @@ export function createHistoryWindow(windowSize: number, initial?: Uint8Array): H
 /** Internal: reuse bag for decoder context. */
 export interface DecoderReuseBag {
   _history?: HistoryWindow;
+  _sequences?: Sequence[];
 }
 
 /**
@@ -160,6 +161,7 @@ export function executeSequencesInto(
   targetOffset: number,
   repOffsets: [number, number, number] = [1, 4, 8],
   historyInput: HistoryWindow | Uint8Array = { buffer: new Uint8Array(0), length: 0, writePos: 0 },
+  updateHistory = false,
 ): number {
   const history = isHistoryWindow(historyInput) ? historyInput : createHistoryWindow(windowSize, historyInput);
   const historyLength = history.length;
@@ -168,12 +170,18 @@ export function executeSequencesInto(
   const historyBuffer = history.buffer;
   let outPos = targetOffset;
   let litPos = 0;
+  const appendProduced = (start: number, length: number): void => {
+    if (updateHistory && length > 0) {
+      appendRangeToHistoryWindow(history, target, start, length);
+    }
+  };
 
   const LIT_COPY_LOOP_THRESHOLD = 16;
   const HISTORY_COPY_LOOP_THRESHOLD = 16;
 
   for (const seq of sequences) {
     if (seq.literalsLength > 0) {
+      const litOutStart = outPos;
       const litEnd = litPos + seq.literalsLength;
       if (litEnd > literals.length) {
         throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
@@ -187,6 +195,7 @@ export function executeSequencesInto(
       }
       outPos += seq.literalsLength;
       litPos = litEnd;
+      appendProduced(litOutStart, seq.literalsLength);
     }
     const ov = seq.offset; // Offset_Value from sequence decode.
     const ll0 = seq.literalsLength === 0;
@@ -235,6 +244,7 @@ export function executeSequencesInto(
       }
       const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
       const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
+      const historyOutStart = outPos;
       if (historyCopyLen <= HISTORY_COPY_LOOP_THRESHOLD) {
         let phys = physicalStart;
         for (let i = 0; i < historyCopyLen; i++) {
@@ -250,9 +260,11 @@ export function executeSequencesInto(
           outPos += remainingHistoryChunk;
         }
       }
+      appendProduced(historyOutStart, historyCopyLen);
       remainingMatch -= historyCopyLen;
     }
     if (remainingMatch > 0) {
+      const matchOutStart = outPos;
       const copyStart = outPos - offset;
       if (offset >= remainingMatch) {
         target.copyWithin(outPos, copyStart, copyStart + remainingMatch);
@@ -269,6 +281,7 @@ export function executeSequencesInto(
           copied += toCopy;
         }
       }
+      appendProduced(matchOutStart, remainingMatch);
     }
     if (isNonRepeat) {
       repOffsets[2] = repOffsets[1];
@@ -287,6 +300,7 @@ export function executeSequencesInto(
     }
   }
   if (litPos < literals.length) {
+    const tailOutStart = outPos;
     const remaining = literals.length - litPos;
     if (remaining <= LIT_COPY_LOOP_THRESHOLD) {
       for (let i = 0; i < remaining; i++) {
@@ -296,6 +310,7 @@ export function executeSequencesInto(
       target.set(literals.subarray(litPos), outPos);
     }
     outPos += remaining;
+    appendProduced(tailOutStart, remaining);
   }
   return outPos - targetOffset;
 }

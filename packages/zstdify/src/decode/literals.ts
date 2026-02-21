@@ -100,7 +100,8 @@ export function decodeRawLiterals(data: Uint8Array, offset: number, size: number
   if (offset + size > data.length) {
     throw new ZstdError('Raw literals truncated', 'corruption_detected');
   }
-  return data.subarray(offset, offset + size).slice();
+  // Return a view to avoid extra copy; callers copy into destination as needed.
+  return data.subarray(offset, offset + size);
 }
 
 /**

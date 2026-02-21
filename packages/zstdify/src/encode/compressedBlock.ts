@@ -44,28 +44,23 @@ const ML_NUMBITS = [
   3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 ];
 
-interface ReverseReadChunk {
-  n: number;
-  value: number;
-}
-
 function writeU24LE(arr: Uint8Array, offset: number, value: number): void {
   arr[offset] = value & 0xff;
   arr[offset + 1] = (value >> 8) & 0xff;
   arr[offset + 2] = (value >> 16) & 0xff;
 }
 
-function encodeReverseBitstream(readOrder: ReverseReadChunk[]): Uint8Array {
+function encodeReverseBitstream(bitCounts: ArrayLike<number>, bitValues: ArrayLike<number>): Uint8Array {
   const bits: number[] = [];
   const writeBitsLSB = (n: number, value: number) => {
     for (let i = 0; i < n; i++) {
       bits.push((value >>> i) & 1);
     }
   };
-  for (let i = readOrder.length - 1; i >= 0; i--) {
-    const chunk = readOrder[i];
-    if (!chunk || chunk.n <= 0) continue;
-    writeBitsLSB(chunk.n, chunk.value);
+  for (let i = bitCounts.length - 1; i >= 0; i--) {
+    const n = bitCounts[i] ?? 0;
+    if (n <= 0) continue;
+    writeBitsLSB(n, bitValues[i] ?? 0);
   }
   // Append end marker, then zero-fill above marker so decoder skips them.
   bits.push(1);
@@ -138,9 +133,11 @@ function buildSingleSymbolCompressedLiterals(literals: Uint8Array): Uint8Array |
   const symbolCode = table.findIndex((row) => row?.symbol === sym);
   if (symbolCode < 0) return null;
 
-  const stream = encodeReverseBitstream(
-    new Array(literals.length).fill(0).map(() => ({ n: maxNumBits, value: symbolCode })),
-  );
+  const bitCounts = new Uint8Array(literals.length);
+  bitCounts.fill(maxNumBits);
+  const bitValues = new Uint16Array(literals.length);
+  bitValues.fill(symbolCode);
+  const stream = encodeReverseBitstream(bitCounts, bitValues);
 
   const directHeader = 127 + numWeights;
   const weightWriter = new BitWriter();
@@ -245,13 +242,15 @@ function buildGeneralCompressedLiterals(literals: Uint8Array): Uint8Array | null
     codeBySymbol[symbol] = code;
   }
 
-  const readOrder: ReverseReadChunk[] = [];
+  const readCounts = new Uint8Array(literals.length);
+  const readValues = new Uint16Array(literals.length);
   for (let i = 0; i < literals.length; i++) {
     const code = codeBySymbol[literals[i]!]!;
     if (code < 0) return null;
-    readOrder.push({ n: 8, value: code });
+    readCounts[i] = 8;
+    readValues[i] = code;
   }
-  const stream = encodeReverseBitstream(readOrder);
+  const stream = encodeReverseBitstream(readCounts, readValues);
 
   const numWeights = weights.length;
   if (numWeights < 1 || numWeights > 128) return null;
@@ -321,7 +320,7 @@ function encodeNumSequences(numSequences: number): Uint8Array | null {
 }
 
 function buildStatePath(
-  codes: readonly number[],
+  codes: ArrayLike<number>,
   table: readonly FSEDecodeRow[],
 ): { states: number[]; updateBits: number[] } | null {
   if (codes.length === 0) return { states: [], updateBits: [] };
@@ -355,6 +354,15 @@ function buildStatePath(
     const nextArr = possible[i + 1]!;
     const curArr = possible[i]!;
     const curNext = nextChoice[i]!;
+    const nextPresent = new Uint8Array(tableSize);
+    for (let j = 0; j < nextArr.length; j++) {
+      nextPresent[nextArr[j]!] = 1;
+    }
+    const nextFrom = new Int32Array(tableSize + 1);
+    nextFrom[tableSize] = -1;
+    for (let s = tableSize - 1; s >= 0; s--) {
+      nextFrom[s] = nextPresent[s] !== 0 ? s : nextFrom[s + 1]!;
+    }
     for (let si = 0; si < candidates.length; si++) {
       const s = candidates[si]!;
       const row = table[s];
@@ -362,17 +370,14 @@ function buildStatePath(
       const width = row.numBits > 0 ? 1 << row.numBits : 1;
       const minNext = row.baseline;
       const maxNext = row.baseline + width - 1;
-      let chosen = -1;
-      for (let j = 0; j < nextArr.length; j++) {
-        const n = nextArr[j]!;
-        if (n >= minNext && n <= maxNext) {
-          chosen = n;
-          break;
-        }
-      }
+      if (maxNext < 0 || minNext >= tableSize) continue;
+      const start = minNext < 0 ? 0 : minNext;
+      const chosen = nextFrom[start]!;
       if (chosen >= 0) {
-        curArr.push(s);
-        curNext[s] = chosen;
+        if (chosen <= maxNext) {
+          curArr.push(s);
+          curNext[s] = chosen;
+        }
       }
     }
     if (curArr.length === 0) return null;
@@ -397,17 +402,22 @@ function buildStatePath(
 
 function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Array | null {
   if (sequences.length === 0) return null;
-  const numSequencesBytes = encodeNumSequences(sequences.length);
+  const numSequences = sequences.length;
+  const numSequencesBytes = encodeNumSequences(numSequences);
   if (!numSequencesBytes) return null;
 
-  const llCodes: number[] = [];
-  const llExtra: Array<{ n: number; value: number }> = [];
-  const mlCodes: number[] = [];
-  const mlExtra: Array<{ n: number; value: number }> = [];
-  const ofCodes: number[] = [];
-  const ofExtra: Array<{ n: number; value: number }> = [];
+  const llCodes = new Uint8Array(numSequences);
+  const llExtraN = new Uint8Array(numSequences);
+  const llExtraValue = new Uint32Array(numSequences);
+  const mlCodes = new Uint8Array(numSequences);
+  const mlExtraN = new Uint8Array(numSequences);
+  const mlExtraValue = new Uint32Array(numSequences);
+  const ofCodes = new Uint8Array(numSequences);
+  const ofExtraN = new Uint8Array(numSequences);
+  const ofExtraValue = new Uint32Array(numSequences);
 
-  for (const sequence of sequences) {
+  for (let i = 0; i < numSequences; i++) {
+    const sequence = sequences[i]!;
     const ll = findLengthCode(sequence.literalsLength, LL_BASELINE, LL_NUMBITS, 15, 0);
     const ml = findLengthCode(sequence.matchLength, ML_BASELINE, ML_NUMBITS, 34, 3);
     if (!ll || !ml) return null;
@@ -417,12 +427,15 @@ function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Ar
     if (ofCode < 0 || ofCode > 28) return null;
     const ofEx = offsetValue - (1 << ofCode);
 
-    llCodes.push(ll.code);
-    llExtra.push({ n: ll.extraN, value: ll.extra });
-    mlCodes.push(ml.code);
-    mlExtra.push({ n: ml.extraN, value: ml.extra });
-    ofCodes.push(ofCode);
-    ofExtra.push({ n: ofCode, value: ofEx });
+    llCodes[i] = ll.code;
+    llExtraN[i] = ll.extraN;
+    llExtraValue[i] = ll.extra;
+    mlCodes[i] = ml.code;
+    mlExtraN[i] = ml.extraN;
+    mlExtraValue[i] = ml.extra;
+    ofCodes[i] = ofCode;
+    ofExtraN[i] = ofCode;
+    ofExtraValue[i] = ofEx;
   }
 
   const { ll: llTable, of: ofTable, ml: mlTable } = getPredefinedFSETables();
@@ -432,16 +445,24 @@ function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Ar
   const mlPath = buildStatePath(mlCodes, mlTable);
   if (!llPath || !ofPath || !mlPath) return null;
 
-  const readChunks: ReverseReadChunk[] = [
-    { n: LITERALS_LENGTH_TABLE_LOG, value: llPath.states[0] ?? 0 },
-    { n: OFFSET_CODE_TABLE_LOG, value: ofPath.states[0] ?? 0 },
-    { n: MATCH_LENGTH_TABLE_LOG, value: mlPath.states[0] ?? 0 },
-  ];
-  for (let i = 0; i < sequences.length; i++) {
-    readChunks.push(ofExtra[i] ?? { n: 0, value: 0 });
-    readChunks.push(mlExtra[i] ?? { n: 0, value: 0 });
-    readChunks.push(llExtra[i] ?? { n: 0, value: 0 });
-    if (i !== sequences.length - 1) {
+  const chunkCount = numSequences * 6;
+  const readCounts = new Uint8Array(chunkCount);
+  const readValues = new Uint32Array(chunkCount);
+  let readPos = 0;
+  readCounts[readPos] = LITERALS_LENGTH_TABLE_LOG;
+  readValues[readPos++] = llPath.states[0] ?? 0;
+  readCounts[readPos] = OFFSET_CODE_TABLE_LOG;
+  readValues[readPos++] = ofPath.states[0] ?? 0;
+  readCounts[readPos] = MATCH_LENGTH_TABLE_LOG;
+  readValues[readPos++] = mlPath.states[0] ?? 0;
+  for (let i = 0; i < numSequences; i++) {
+    readCounts[readPos] = ofExtraN[i] ?? 0;
+    readValues[readPos++] = ofExtraValue[i] ?? 0;
+    readCounts[readPos] = mlExtraN[i] ?? 0;
+    readValues[readPos++] = mlExtraValue[i] ?? 0;
+    readCounts[readPos] = llExtraN[i] ?? 0;
+    readValues[readPos++] = llExtraValue[i] ?? 0;
+    if (i !== numSequences - 1) {
       const llState = llPath.states[i] ?? 0;
       const mlState = mlPath.states[i] ?? 0;
       const ofState = ofPath.states[i] ?? 0;
@@ -449,13 +470,16 @@ function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Ar
       const mlRow = mlTable[mlState];
       const ofRow = ofTable[ofState];
       if (!llRow || !mlRow || !ofRow) return null;
-      readChunks.push({ n: llRow.numBits, value: llPath.updateBits[i] ?? 0 });
-      readChunks.push({ n: mlRow.numBits, value: mlPath.updateBits[i] ?? 0 });
-      readChunks.push({ n: ofRow.numBits, value: ofPath.updateBits[i] ?? 0 });
+      readCounts[readPos] = llRow.numBits;
+      readValues[readPos++] = llPath.updateBits[i] ?? 0;
+      readCounts[readPos] = mlRow.numBits;
+      readValues[readPos++] = mlPath.updateBits[i] ?? 0;
+      readCounts[readPos] = ofRow.numBits;
+      readValues[readPos++] = ofPath.updateBits[i] ?? 0;
     }
   }
 
-  const bitstream = encodeReverseBitstream(readChunks);
+  const bitstream = encodeReverseBitstream(readCounts, readValues);
   const out = new Uint8Array(numSequencesBytes.length + 1 + bitstream.length);
   out.set(numSequencesBytes, 0);
   out[numSequencesBytes.length] = 0x00; // predefined LL/OF/ML modes

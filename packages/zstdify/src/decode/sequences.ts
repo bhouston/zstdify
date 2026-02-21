@@ -84,6 +84,7 @@ export function decodeSequences(
   offset: number,
   size: number,
   prevTables: SequenceTables | null,
+  sequenceReuse?: Sequence[],
 ): DecodeSequencesResult {
   if (size < 2) {
     throw new ZstdError('Sequences section too short', 'corruption_detected');
@@ -216,7 +217,10 @@ export function decodeSequences(
   const stateOF = { value: readBits(ofTableLog) };
   const stateML = { value: readBits(mlTableLog) };
 
-  const sequences = new Array<Sequence>(numSequences);
+  const sequences = sequenceReuse ?? new Array<Sequence>(numSequences);
+  if (sequences.length < numSequences) {
+    sequences.length = numSequences;
+  }
 
   for (let i = 0; i < numSequences; i++) {
     const isLast = i === numSequences - 1;
@@ -240,11 +244,18 @@ export function decodeSequences(
     }
     const literalsLength = llCode <= 15 ? llCode : LL_BASELINE[llCode]! + readBits(LL_NUMBITS[llCode]!);
 
-    sequences[i] = {
-      literalsLength,
-      offset: offsetValue,
-      matchLength,
-    };
+    const existing = sequences[i];
+    if (existing) {
+      existing.literalsLength = literalsLength;
+      existing.offset = offsetValue;
+      existing.matchLength = matchLength;
+    } else {
+      sequences[i] = {
+        literalsLength,
+        offset: offsetValue,
+        matchLength,
+      };
+    }
 
     if (!isLast) {
       // State updates for next sequence are LL, ML, OF.
@@ -254,6 +265,7 @@ export function decodeSequences(
     }
   }
 
+  sequences.length = numSequences;
   return {
     sequences,
     tables: { llTable, llTableLog, ofTable, ofTableLog, mlTable, mlTableLog },
