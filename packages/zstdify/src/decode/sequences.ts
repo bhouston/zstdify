@@ -33,6 +33,18 @@ const ML_NUMBITS = [
   3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 ];
 
+const DEFAULT_LL_TABLE = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
+const DEFAULT_OF_TABLE = buildFSEDecodeTable(OFFSET_CODE_DEFAULT_DISTRIBUTION, OFFSET_CODE_TABLE_LOG);
+const DEFAULT_ML_TABLE = buildFSEDecodeTable(MATCH_LENGTH_DEFAULT_DISTRIBUTION, MATCH_LENGTH_TABLE_LOG);
+const DEFAULT_SEQUENCE_TABLES: SequenceTables = {
+  llTable: DEFAULT_LL_TABLE,
+  llTableLog: LITERALS_LENGTH_TABLE_LOG,
+  ofTable: DEFAULT_OF_TABLE,
+  ofTableLog: OFFSET_CODE_TABLE_LOG,
+  mlTable: DEFAULT_ML_TABLE,
+  mlTableLog: MATCH_LENGTH_TABLE_LOG,
+};
+
 export type CompressionMode = 0 | 1 | 2 | 3;
 
 export interface SequenceTables {
@@ -79,20 +91,20 @@ export function decodeSequences(
 
   let pos = offset;
 
-  let numSequences = data[pos] ?? 0;
+  let numSequences = data[pos]!;
   pos++;
   if (numSequences >= 128) {
     if (numSequences === 255) {
       if (pos + 2 > offset + size) {
         throw new ZstdError('Sequences section truncated', 'corruption_detected');
       }
-      numSequences = (data[pos] ?? 0) + ((data[pos + 1] ?? 0) << 8) + 0x7f00;
+      numSequences = data[pos]! + (data[pos + 1]! << 8) + 0x7f00;
       pos += 2;
     } else {
       if (pos >= offset + size) {
         throw new ZstdError('Sequences section truncated', 'corruption_detected');
       }
-      numSequences = ((numSequences - 0x80) << 8) + (data[pos] ?? 0);
+      numSequences = ((numSequences - 0x80) << 8) + data[pos]!;
       pos++;
     }
   }
@@ -100,14 +112,7 @@ export function decodeSequences(
   if (numSequences === 0) {
     return {
       sequences: [],
-      tables: prevTables ?? {
-        llTable: buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG),
-        llTableLog: LITERALS_LENGTH_TABLE_LOG,
-        ofTable: buildFSEDecodeTable(OFFSET_CODE_DEFAULT_DISTRIBUTION, OFFSET_CODE_TABLE_LOG),
-        ofTableLog: OFFSET_CODE_TABLE_LOG,
-        mlTable: buildFSEDecodeTable(MATCH_LENGTH_DEFAULT_DISTRIBUTION, MATCH_LENGTH_TABLE_LOG),
-        mlTableLog: MATCH_LENGTH_TABLE_LOG,
-      },
+      tables: prevTables ?? DEFAULT_SEQUENCE_TABLES,
       bytesRead: pos - offset,
     };
   }
@@ -116,7 +121,7 @@ export function decodeSequences(
     throw new ZstdError('Sequences section truncated', 'corruption_detected');
   }
 
-  const modesByte = data[pos] ?? 0;
+  const modesByte = data[pos]!;
   pos++;
   const llMode = (modesByte >> 6) & 3;
   const ofMode = (modesByte >> 4) & 3;
@@ -125,82 +130,72 @@ export function decodeSequences(
     throw new ZstdError('Reserved bits set in sequences modes', 'corruption_detected');
   }
 
-  let llTable = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
+  let llTable = DEFAULT_LL_TABLE;
   let llTableLog = LITERALS_LENGTH_TABLE_LOG;
-  let ofTable = buildFSEDecodeTable(OFFSET_CODE_DEFAULT_DISTRIBUTION, OFFSET_CODE_TABLE_LOG);
+  let ofTable = DEFAULT_OF_TABLE;
   let ofTableLog = OFFSET_CODE_TABLE_LOG;
-  let mlTable = buildFSEDecodeTable(MATCH_LENGTH_DEFAULT_DISTRIBUTION, MATCH_LENGTH_TABLE_LOG);
+  let mlTable = DEFAULT_ML_TABLE;
   let mlTableLog = MATCH_LENGTH_TABLE_LOG;
 
-  const getLLTable = () => {
-    if (llMode === 0) {
-      llTable = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
-      llTableLog = LITERALS_LENGTH_TABLE_LOG;
-    } else if (llMode === 1) {
-      if (pos >= offset + size) throw new ZstdError('Sequences section truncated', 'corruption_detected');
-      const sym = data[pos] ?? 0;
-      pos++;
-      llTable = buildRLETable(sym, 6);
-      llTableLog = 6;
-    } else if (llMode === 2) {
-      const result = readNCount(data, pos, 35, 9);
-      pos += result.bytesRead;
-      llTable = buildFSEDecodeTable(result.normalizedCounter, result.tableLog);
-      llTableLog = result.tableLog;
-    } else {
-      if (!prevTables) throw new ZstdError('Repeat_Mode without previous table', 'corruption_detected');
-      llTable = prevTables.llTable;
-      llTableLog = prevTables.llTableLog;
-    }
-  };
+  if (llMode === 0) {
+    llTable = DEFAULT_LL_TABLE;
+    llTableLog = LITERALS_LENGTH_TABLE_LOG;
+  } else if (llMode === 1) {
+    if (pos >= offset + size) throw new ZstdError('Sequences section truncated', 'corruption_detected');
+    const sym = data[pos]!;
+    pos++;
+    llTable = buildRLETable(sym, 6);
+    llTableLog = 6;
+  } else if (llMode === 2) {
+    const result = readNCount(data, pos, 35, 9);
+    pos += result.bytesRead;
+    llTable = buildFSEDecodeTable(result.normalizedCounter, result.tableLog);
+    llTableLog = result.tableLog;
+  } else {
+    if (!prevTables) throw new ZstdError('Repeat_Mode without previous table', 'corruption_detected');
+    llTable = prevTables.llTable;
+    llTableLog = prevTables.llTableLog;
+  }
 
-  const getOFTable = () => {
-    if (ofMode === 0) {
-      ofTable = buildFSEDecodeTable(OFFSET_CODE_DEFAULT_DISTRIBUTION, OFFSET_CODE_TABLE_LOG);
-      ofTableLog = OFFSET_CODE_TABLE_LOG;
-    } else if (ofMode === 1) {
-      if (pos >= offset + size) throw new ZstdError('Sequences section truncated', 'corruption_detected');
-      const sym = data[pos] ?? 0;
-      pos++;
-      ofTable = buildRLETable(sym, 5);
-      ofTableLog = 5;
-    } else if (ofMode === 2) {
-      const result = readNCount(data, pos, 31, 8);
-      pos += result.bytesRead;
-      ofTable = buildFSEDecodeTable(result.normalizedCounter, result.tableLog);
-      ofTableLog = result.tableLog;
-    } else {
-      if (!prevTables) throw new ZstdError('Repeat_Mode without previous table', 'corruption_detected');
-      ofTable = prevTables.ofTable;
-      ofTableLog = prevTables.ofTableLog;
-    }
-  };
+  if (ofMode === 0) {
+    ofTable = DEFAULT_OF_TABLE;
+    ofTableLog = OFFSET_CODE_TABLE_LOG;
+  } else if (ofMode === 1) {
+    if (pos >= offset + size) throw new ZstdError('Sequences section truncated', 'corruption_detected');
+    const sym = data[pos]!;
+    pos++;
+    ofTable = buildRLETable(sym, 5);
+    ofTableLog = 5;
+  } else if (ofMode === 2) {
+    const result = readNCount(data, pos, 31, 8);
+    pos += result.bytesRead;
+    ofTable = buildFSEDecodeTable(result.normalizedCounter, result.tableLog);
+    ofTableLog = result.tableLog;
+  } else {
+    if (!prevTables) throw new ZstdError('Repeat_Mode without previous table', 'corruption_detected');
+    ofTable = prevTables.ofTable;
+    ofTableLog = prevTables.ofTableLog;
+  }
 
-  const getMLTable = () => {
-    if (mlMode === 0) {
-      mlTable = buildFSEDecodeTable(MATCH_LENGTH_DEFAULT_DISTRIBUTION, MATCH_LENGTH_TABLE_LOG);
-      mlTableLog = MATCH_LENGTH_TABLE_LOG;
-    } else if (mlMode === 1) {
-      if (pos >= offset + size) throw new ZstdError('Sequences section truncated', 'corruption_detected');
-      const sym = data[pos] ?? 0;
-      pos++;
-      mlTable = buildRLETable(sym, 6);
-      mlTableLog = 6;
-    } else if (mlMode === 2) {
-      const result = readNCount(data, pos, 52, 9);
-      pos += result.bytesRead;
-      mlTable = buildFSEDecodeTable(result.normalizedCounter, result.tableLog);
-      mlTableLog = result.tableLog;
-    } else {
-      if (!prevTables) throw new ZstdError('Repeat_Mode without previous table', 'corruption_detected');
-      mlTable = prevTables.mlTable;
-      mlTableLog = prevTables.mlTableLog;
-    }
-  };
-
-  getLLTable();
-  getOFTable();
-  getMLTable();
+  if (mlMode === 0) {
+    mlTable = DEFAULT_ML_TABLE;
+    mlTableLog = MATCH_LENGTH_TABLE_LOG;
+  } else if (mlMode === 1) {
+    if (pos >= offset + size) throw new ZstdError('Sequences section truncated', 'corruption_detected');
+    const sym = data[pos]!;
+    pos++;
+    mlTable = buildRLETable(sym, 6);
+    mlTableLog = 6;
+  } else if (mlMode === 2) {
+    const result = readNCount(data, pos, 52, 9);
+    pos += result.bytesRead;
+    mlTable = buildFSEDecodeTable(result.normalizedCounter, result.tableLog);
+    mlTableLog = result.tableLog;
+  } else {
+    if (!prevTables) throw new ZstdError('Repeat_Mode without previous table', 'corruption_detected');
+    mlTable = prevTables.mlTable;
+    mlTableLog = prevTables.mlTableLog;
+  }
 
   const bitstreamStart = pos;
   const bitstreamSize = offset + size - pos;
@@ -221,7 +216,7 @@ export function decodeSequences(
   const stateOF = { value: readBits(ofTableLog) };
   const stateML = { value: readBits(mlTableLog) };
 
-  const sequences: Sequence[] = [];
+  const sequences = new Array<Sequence>(numSequences);
 
   for (let i = 0; i < numSequences; i++) {
     const isLast = i === numSequences - 1;
@@ -235,15 +230,21 @@ export function decodeSequences(
 
     const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? readBits(offsetCode) : 0);
 
-    const matchLength = mlCode <= 31 ? mlCode + 3 : (ML_BASELINE[mlCode] ?? 0) + readBits(ML_NUMBITS[mlCode] ?? 0);
+    if (mlCode >= ML_BASELINE.length || mlCode >= ML_NUMBITS.length) {
+      throw new ZstdError('Invalid match length code', 'corruption_detected');
+    }
+    const matchLength = mlCode <= 31 ? mlCode + 3 : ML_BASELINE[mlCode]! + readBits(ML_NUMBITS[mlCode]!);
 
-    const literalsLength = llCode <= 15 ? llCode : (LL_BASELINE[llCode] ?? 0) + readBits(LL_NUMBITS[llCode] ?? 0);
+    if (llCode >= LL_BASELINE.length || llCode >= LL_NUMBITS.length) {
+      throw new ZstdError('Invalid literals length code', 'corruption_detected');
+    }
+    const literalsLength = llCode <= 15 ? llCode : LL_BASELINE[llCode]! + readBits(LL_NUMBITS[llCode]!);
 
-    sequences.push({
+    sequences[i] = {
       literalsLength,
       offset: offsetValue,
       matchLength,
-    });
+    };
 
     if (!isLast) {
       // State updates for next sequence are LL, ML, OF.

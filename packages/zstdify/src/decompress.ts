@@ -30,6 +30,7 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
       : null;
   const dictionaryId = normalizedDictionary?.dictionaryId ?? providedDictionaryId;
   const chunks: Uint8Array[] = [];
+  let totalOutputSize = 0;
   let offset = 0;
 
   while (offset < input.length) {
@@ -55,10 +56,11 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
       offset,
       header,
       normalizedDictionary,
-      maxSize !== undefined ? maxSize - chunks.reduce((s, c) => s + c.length, 0) : undefined,
+      maxSize !== undefined ? maxSize - totalOutputSize : undefined,
       validateChecksum,
     );
     chunks.push(output);
+    totalOutputSize += output.length;
     offset += bytesConsumed;
   }
 
@@ -68,8 +70,7 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
     if (!c) throw new ZstdError('Unreachable', 'corruption_detected');
     return c;
   }
-  const total = chunks.reduce((s, c) => s + c.length, 0);
-  const result = new Uint8Array(total);
+  const result = new Uint8Array(totalOutputSize);
   let pos = 0;
   for (const chunk of chunks) {
     result.set(chunk, pos);
