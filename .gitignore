@@ -12,8 +12,6 @@ packages/zstdify-tests/benchmarks/bundle-size.latest.md
 packages/zstdify-tests/benchmarks/bundle-size.latest.json
 packages/zstdify-tests/benchmarks/latest.json
 .gitignore
-zstdify-bench.cpuprofile
-decode-only.cpuprofile
-zstdify-decode-focused.cpuprofile
-zstdify-decode-profile.cpuprofile
-zstdify-encode-profile.cpuprofile
+*.cpuprofile
+packages/zstdify-tests/benchmarks/benchmark.vl.json
+packages/zstdify-tests/benchmarks/latest.md
