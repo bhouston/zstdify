@@ -113,6 +113,18 @@ pnpm test
 pnpm check
 ```
 
+### Divergence debug tool
+
+When a Node zstd -> zstdify decode mismatch appears, use the divergence tool to quickly locate where decoded output first diverges and which decode paths are involved (literals mode, sequence modes, repeat-offset candidates, and nearby block context).
+
+Run it from `zstdify-tests`:
+
+```bash
+pnpm --filter zstdify-tests run debug:node-zstd-divergence -- --payload-id corpus-linux-kernel-tar --pass-level 3 --fail-level 5
+```
+
+You can also enable debug output directly in the interop test via `ZSTDIFY_INTEROP_DEBUG=1` (with optional payload/level env vars) to print the same high-level divergence report during test runs.
+
 ### How we validate
 
 All of the following run as part of the test suite (`pnpm test` / `pnpm vitest`):

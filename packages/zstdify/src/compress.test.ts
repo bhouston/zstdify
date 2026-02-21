@@ -9,6 +9,19 @@ function firstBlockType(frame: Uint8Array): number {
   return parseBlockHeader(frame, blockOffset).blockType;
 }
 
+function allBlockTypes(frame: Uint8Array): number[] {
+  const { header } = parseZstdFrame(frame, 0);
+  let pos = 4 + header.headerSize;
+  const out: number[] = [];
+  while (pos + 3 <= frame.length) {
+    const parsed = parseBlockHeader(frame, pos);
+    out.push(parsed.blockType);
+    pos += 3 + parsed.blockSize;
+    if (parsed.lastBlock) break;
+  }
+  return out;
+}
+
 describe('compress branch behavior', () => {
   it('uses raw block path at level=0', () => {
     const input = new Uint8Array(4096);
@@ -38,5 +51,22 @@ describe('compress branch behavior', () => {
     for (let i = 0; i < noMatches.length; i++) noMatches[i] = i;
     const fallbackChoice = compress(noMatches, { level: 3 });
     expect(firstBlockType(fallbackChoice)).toBe(0);
+  });
+
+  it('uses cross-block history matching at higher levels', () => {
+    const blockA = new Uint8Array(128 * 1024);
+    let state = 0x12345678;
+    for (let i = 0; i < blockA.length; i++) {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      blockA[i] = state & 0xff;
+    }
+    const input = new Uint8Array(blockA.length * 2);
+    input.set(blockA, 0);
+    input.set(blockA, blockA.length);
+
+    const encoded = compress(input, { level: 8 });
+    const blockTypes = allBlockTypes(encoded);
+    expect(blockTypes.length).toBe(2);
+    expect(blockTypes[1]).toBe(2);
   });
 });

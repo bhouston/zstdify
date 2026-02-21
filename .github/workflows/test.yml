@@ -47,6 +47,30 @@ jobs:
       - name: Run tests with coverage
         run: pnpm vitest run --coverage
 
+      - name: Build benchmark baseline (phase 0)
+        run: pnpm --filter zstdify-tests run bench:phase0-baseline
+
+      - name: Capture encode CPU profile
+        run: pnpm --filter zstdify-tests run bench:encode-profile
+
+      - name: Capture decode CPU profile
+        run: pnpm --filter zstdify-tests run bench:decode-profile
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-artifacts
+          retention-days: 14
+          path: |
+            packages/zstdify-tests/benchmarks/latest.md
+            packages/zstdify-tests/benchmarks/latest.json
+            packages/zstdify-tests/benchmarks/latest.svg
+            packages/zstdify-tests/benchmarks/latest-ratio.svg
+            packages/zstdify-tests/benchmarks/decode-only.latest.md
+            packages/zstdify-tests/benchmarks/decode-only.latest.json
+            packages/zstdify-tests/*.cpuprofile
+
       - name: Find coverage files
         id: coverage
         run: |

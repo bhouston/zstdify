@@ -32,4 +32,23 @@ describe('buildGreedySequences', () => {
     expect(plan.literals).toEqual(input);
     expect(plan.trailingLiterals).toBe(input.length);
   });
+
+  it('supports lazy and optimal strategy modes', () => {
+    const input = new TextEncoder().encode('phase-one strategy strategy strategy phase-one strategy strategy');
+    const lazyPlan = buildGreedySequences(input, { strategy: 'lazy' });
+    const optimalPlan = buildGreedySequences(input, { strategy: 'optimal' });
+    expect(executeSequences(lazyPlan.literals, lazyPlan.sequences, 128 * 1024)).toEqual(input);
+    expect(executeSequences(optimalPlan.literals, optimalPlan.sequences, 128 * 1024)).toEqual(input);
+    expect(lazyPlan.sequences.length).toBeGreaterThan(0);
+    expect(optimalPlan.sequences.length).toBeGreaterThan(0);
+  });
+
+  it('matches from provided history prefix', () => {
+    const history = new TextEncoder().encode('history-prefix-used-for-matching-');
+    const input = new TextEncoder().encode('history-prefix-used-for-matching-and-then-more');
+    const plan = buildGreedySequences(input, { strategy: 'fast', history });
+    const output = executeSequences(plan.literals, plan.sequences, 128 * 1024, [1, 4, 8], history);
+    expect(output).toEqual(input);
+    expect(plan.sequences.length).toBeGreaterThan(0);
+  });
 });

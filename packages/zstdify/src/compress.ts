@@ -19,9 +19,42 @@ export type CompressOptions = {
 };
 
 const BLOCK_MAX = 128 * 1024;
+const WINDOW_SIZE = 128 * 1024;
+
+type CompressionStrategy = 'fast' | 'lazy' | 'optimal';
+
+function selectCompressionStrategy(level: number): CompressionStrategy | null {
+  if (level <= 1) return null;
+  if (level <= 3) return 'fast';
+  if (level <= 6) return 'lazy';
+  return 'optimal';
+}
+
+function appendHistory(history: Uint8Array<ArrayBufferLike>, chunk: Uint8Array<ArrayBufferLike>): Uint8Array {
+  if (chunk.length === 0) return history;
+  if (chunk.length >= WINDOW_SIZE) {
+    const out = new Uint8Array(WINDOW_SIZE);
+    out.set(chunk.subarray(chunk.length - WINDOW_SIZE), 0);
+    return out;
+  }
+  const total = history.length + chunk.length;
+  if (total <= WINDOW_SIZE) {
+    const out = new Uint8Array(total);
+    out.set(history, 0);
+    out.set(chunk, history.length);
+    return out;
+  }
+  const keepFromHistory = WINDOW_SIZE - chunk.length;
+  const out = new Uint8Array(WINDOW_SIZE);
+  out.set(history.subarray(history.length - keepFromHistory), 0);
+  out.set(chunk, keepFromHistory);
+  return out;
+}
 
 export function compress(input: Uint8Array, options?: CompressOptions): Uint8Array {
-  const level = options?.level ?? 0;
+  const requestedLevel = options?.level ?? 0;
+  const level = Math.max(0, Math.min(9, Math.trunc(requestedLevel)));
+  const strategy = selectCompressionStrategy(level);
   const hasChecksum = options?.checksum ?? false;
   const dictionary = options?.dictionary;
   const dictionaryBytes = dictionary instanceof Uint8Array ? dictionary : dictionary?.bytes;
@@ -41,13 +74,14 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   let offset = 0;
   const blockCount = input.length === 0 ? 1 : Math.ceil(input.length / BLOCK_MAX);
   let blockIndex = 0;
+  let history: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
   while (offset < input.length || blockIndex < blockCount) {
     const size = Math.min(BLOCK_MAX, input.length - offset);
     const last = blockIndex === blockCount - 1;
     const block = input.subarray(offset, offset + size);
     if (level > 0 && size > 0) {
-      if (level > 1) {
-        const plan = buildGreedySequences(block);
+      if (strategy) {
+        const plan = buildGreedySequences(block, { strategy, history });
         if (plan.sequences.length > 0) {
           const payload = buildCompressedBlockPayload(plan.literals, plan.sequences);
           if (payload) {
@@ -77,6 +111,7 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
     } else {
       chunks.push(writeRawBlock(input, offset, size, last));
     }
+    history = appendHistory(history, block);
     offset += size;
     blockIndex++;
   }

@@ -659,3 +659,11 @@ export function writeCompressedBlock(payload: Uint8Array, last: boolean): Uint8A
   out.set(payload, 3);
   return out;
 }
+
+// Internal benchmark hooks for hot-path profiling.
+export const __benchInternals = {
+  encodeReverseBitstream,
+  buildRawLiteralsSection,
+  buildGeneralCompressedLiterals,
+  buildPredefinedSequenceSection,
+};
