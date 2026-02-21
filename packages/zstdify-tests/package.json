@@ -7,6 +7,7 @@
     "test": "vitest",
     "tsgo": "tsc --noEmit",
     "bench:prepare": "pnpm --filter zstdify run build",
+    "debug:node-zstd-divergence": "pnpm run bench:prepare && node scripts/debug-node-zstd-divergence.ts",
     "bench:fetch-data": "node scripts/fetch-bench-data.ts",
     "bench:node-vs-zstdify": "pnpm run bench:prepare && node scripts/benchmark-node-vs-zstdify.ts",
     "bench:decode-only": "pnpm run bench:prepare && node scripts/benchmark-decode-only.ts",

@@ -60,6 +60,17 @@ export interface DecodeSequencesResult {
   sequences: PackedSequences;
   tables: SequenceTables;
   bytesRead: number;
+  metadata: SequenceSectionMetadata;
+}
+
+export interface SequenceSectionMetadata {
+  numSequences: number;
+  llMode: CompressionMode;
+  ofMode: CompressionMode;
+  mlMode: CompressionMode;
+  llTableLog: number;
+  ofTableLog: number;
+  mlTableLog: number;
 }
 
 function getStateRow(table: readonly FSEDecodeRow[], stateValue: number): FSEDecodeRow {
@@ -130,6 +141,15 @@ export function decodeSequences(
       sequences,
       tables: prevTables ?? DEFAULT_SEQUENCE_TABLES,
       bytesRead: pos - offset,
+      metadata: {
+        numSequences: 0,
+        llMode: 0,
+        ofMode: 0,
+        mlMode: 0,
+        llTableLog: (prevTables ?? DEFAULT_SEQUENCE_TABLES).llTableLog,
+        ofTableLog: (prevTables ?? DEFAULT_SEQUENCE_TABLES).ofTableLog,
+        mlTableLog: (prevTables ?? DEFAULT_SEQUENCE_TABLES).mlTableLog,
+      },
     };
   }
 
@@ -276,5 +296,14 @@ export function decodeSequences(
     sequences,
     tables: { llTable, llTableLog, ofTable, ofTableLog, mlTable, mlTableLog },
     bytesRead: size,
+    metadata: {
+      numSequences,
+      llMode: llMode as CompressionMode,
+      ofMode: ofMode as CompressionMode,
+      mlMode: mlMode as CompressionMode,
+      llTableLog,
+      ofTableLog,
+      mlTableLog,
+    },
   };
 }

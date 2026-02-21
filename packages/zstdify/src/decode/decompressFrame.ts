@@ -8,6 +8,7 @@ import { ZstdError } from '../errors.js';
 import { validateContentChecksum } from '../frame/checksum.js';
 import type { FrameHeader } from '../frame/frameHeader.js';
 import { parseBlockHeader } from './block.js';
+import type { DecodeTrace, DecodeTraceLiteralsInfo, DecodeTraceSequencesInfo } from './debugTrace.js';
 import {
   decodeCompressedLiterals,
   decodeRawLiterals,
@@ -33,6 +34,7 @@ export function decompressFrame(
   maxSize?: number,
   validateChecksum = true,
   reuseContext?: DecoderReuseBag,
+  debugTrace?: DecodeTrace,
 ): { output: Uint8Array; bytesConsumed: number } {
   let pos = offset + 4 + header.headerSize;
   const knownOutputSize = header.contentSize ?? null;
@@ -77,12 +79,17 @@ export function decompressFrame(
     totalSize += chunk.length;
   };
 
+  let blockIndex = 0;
   while (true) {
     if (pos + 3 > data.length) {
       throw new ZstdError('Block header truncated', 'corruption_detected');
     }
+    const blockHeaderPos = pos;
     const block = parseBlockHeader(data, pos);
     pos += 3;
+    const blockOutputStart = totalSize;
+    let blockLiteralsInfo: DecodeTraceLiteralsInfo | undefined;
+    let blockSequencesInfo: DecodeTraceSequencesInfo | undefined;
 
     if (block.blockType === 0) {
       if (pos + block.blockSize > data.length) {
@@ -110,6 +117,13 @@ export function decompressFrame(
     } else if (block.blockType === 2) {
       const blockContent = data.subarray(pos, pos + block.blockSize);
       const { header: litHeader, dataOffset: litDataOffset } = parseLiteralsSectionHeader(blockContent, 0);
+      blockLiteralsInfo = {
+        blockType: litHeader.blockType,
+        regeneratedSize: litHeader.regeneratedSize,
+        compressedSize: litHeader.compressedSize,
+        numStreams: litHeader.numStreams,
+        headerSize: litHeader.headerSize,
+      };
 
       let literals: Uint8Array;
       let litBytesConsumed: number;
@@ -165,6 +179,24 @@ export function decompressFrame(
           reuseContext._sequences = seqResult.sequences;
         }
         prevSeqTables = seqResult.tables;
+        let repeatOffsetCandidateCount = 0;
+        for (let i = 0; i < seqResult.sequences.length; i++) {
+          const offsetValue = seqResult.sequences.offset[i] ?? 0;
+          const llValue = seqResult.sequences.literalsLength[i] ?? 0;
+          if (offsetValue <= 2 || (offsetValue === 3 && llValue > 0)) {
+            repeatOffsetCandidateCount++;
+          }
+        }
+        blockSequencesInfo = {
+          numSequences: seqResult.metadata.numSequences,
+          llMode: seqResult.metadata.llMode,
+          ofMode: seqResult.metadata.ofMode,
+          mlMode: seqResult.metadata.mlMode,
+          llTableLog: seqResult.metadata.llTableLog,
+          ofTableLog: seqResult.metadata.ofTableLog,
+          mlTableLog: seqResult.metadata.mlTableLog,
+          repeatOffsetCandidateCount,
+        };
         if (seqResult.sequences.length === 0) {
           appendOutput(literals);
           if (!block.lastBlock) {
@@ -194,6 +226,19 @@ export function decompressFrame(
     } else {
       throw new ZstdError('Unsupported block type', 'corruption_detected');
     }
+
+    debugTrace?.onBlockDecoded?.({
+      blockIndex,
+      blockType: block.blockType,
+      blockSize: block.blockSize,
+      lastBlock: block.lastBlock,
+      inputOffset: blockHeaderPos,
+      outputStart: blockOutputStart,
+      outputEnd: totalSize,
+      literals: blockLiteralsInfo,
+      sequences: blockSequencesInfo,
+    });
+    blockIndex++;
 
     if (maxSize !== undefined && totalSize > maxSize) {
       throw new ZstdError('Decompressed size exceeds maxSize', 'parameter_unsupported');

@@ -2,6 +2,10 @@ import zlib from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { compress, decompress } from 'zstdify';
+import {
+  formatInteropDivergenceReport,
+  runNodeInteropDivergenceDebug,
+} from '../helpers/divergenceDebug.js';
 import { loadLocalBenchCorpusForTests } from '../helpers/localBenchCorpus.js';
 import { makeBinaryPayload, makeSeededPayload } from '../helpers/payloadHelpers.js';
 
@@ -41,15 +45,42 @@ const CORPUS_PAYLOADS = loadLocalBenchCorpusForTests().map((x) => ({
 
 const PAYLOADS = [...SYNTHETIC_PAYLOADS, ...CORPUS_PAYLOADS];
 const LEVELS = [3, 5, 9];
+const INTEROP_DEBUG_ENABLED = process.env.ZSTDIFY_INTEROP_DEBUG === '1';
+const INTEROP_DEBUG_PAYLOAD = process.env.ZSTDIFY_INTEROP_DEBUG_PAYLOAD ?? 'corpus-linux-kernel-tar';
+const INTEROP_PASS_LEVEL = Number.parseInt(process.env.ZSTDIFY_INTEROP_DEBUG_PASS_LEVEL ?? '3', 10);
+const INTEROP_FAIL_LEVELS = (process.env.ZSTDIFY_INTEROP_DEBUG_FAIL_LEVELS ?? '5,9')
+  .split(',')
+  .map((x) => Number.parseInt(x.trim(), 10))
+  .filter((x) => Number.isFinite(x));
 
 describe('interop: Node zstd <-> zstdify', () => {
   for (const { id, category, data } of PAYLOADS) {
     for (const level of LEVELS) {
-      it(`${id} (${category}) level ${level}: round-trips both directions`, () => {
+      it(`${id} (${category}) level ${level}: round-trips both directions`, async () => {
         const originalHash = sha256(data);
+        const shouldEmitDebug =
+          INTEROP_DEBUG_ENABLED &&
+          id === INTEROP_DEBUG_PAYLOAD &&
+          level !== INTEROP_PASS_LEVEL &&
+          INTEROP_FAIL_LEVELS.includes(level);
 
         const nodeCompressed = nodeCompress(data, level);
         const zstdifyDecoded = decompress(nodeCompressed, { validateChecksum: false });
+        if (shouldEmitDebug) {
+          const report = await runNodeInteropDivergenceDebug({
+            payloadId: id,
+            input: data,
+            passLevel: INTEROP_PASS_LEVEL,
+            failLevel: level,
+          });
+          if (report) {
+            console.error(formatInteropDivergenceReport(report));
+          } else {
+            console.error(
+              `[interop-debug] ${id} level ${INTEROP_PASS_LEVEL} -> ${level}: no divergence between decoded outputs`,
+            );
+          }
+        }
         expect(sha256(zstdifyDecoded)).toBe(originalHash);
 
         const zstdifyCompressed = compress(data, { level });

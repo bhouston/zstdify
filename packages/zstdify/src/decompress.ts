@@ -3,6 +3,7 @@
  */
 
 import { decompressFrame } from './decode/decompressFrame.js';
+import type { DecodeTrace } from './decode/debugTrace.js';
 import type { DecoderReuseBag } from './decode/reconstruct.js';
 import { normalizeDecoderDictionary } from './dictionary/decoderDictionary.js';
 import { ZstdError } from './errors.js';
@@ -19,6 +20,8 @@ export type DecompressOptions = {
   validateChecksum?: boolean;
   /** Optional reusable context; use one context per logical stream for best speed when decoding repeatedly. */
   reuseContext?: DecoderContext;
+  /** Debug-only decode callbacks for instrumentation. */
+  debugTrace?: DecodeTrace;
 };
 
 export function decompress(input: Uint8Array, options?: DecompressOptions): Uint8Array {
@@ -65,6 +68,7 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
       maxSize !== undefined ? maxSize - totalOutputSize : undefined,
       validateChecksum,
       options?.reuseContext,
+      options?.debugTrace,
     );
     chunks.push(output);
     totalOutputSize += output.length;
