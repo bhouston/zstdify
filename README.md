@@ -12,7 +12,6 @@ Pure JavaScript/TypeScript zstd compression/decompression library. No native dep
 ## Features
 
 - **Pure JS/TS zstd in Node and browsers**: No native dependencies, portable by default.
-- **Faster than Node.js's built-in Zstd**: Decompression throughput is up to 50% faster that Node.js.
 - **Decoder support across real-world zstd frames**:
   - Raw, RLE, and compressed blocks (including Huffman/FSE-based paths).
   - Single and concatenated frames, plus skippable frame support.
