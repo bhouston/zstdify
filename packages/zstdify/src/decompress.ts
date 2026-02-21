@@ -11,6 +11,8 @@ import { isSkippableFrame, skipSkippableFrame } from './frame/skippable.js';
 export type DecompressOptions = {
   maxSize?: number;
   dictionary?: Uint8Array | { bytes: Uint8Array; id?: number };
+  /** When true (default), validate frame content checksum when present. Set to false to skip validation for speed. */
+  validateChecksum?: boolean;
 };
 
 export function decompress(input: Uint8Array, options?: DecompressOptions): Uint8Array {
@@ -19,6 +21,7 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
   }
   const maxSize = options?.maxSize;
   const dictionary = options?.dictionary;
+  const validateChecksum = options?.validateChecksum !== false;
   const dictionaryBytes = dictionary instanceof Uint8Array ? dictionary : dictionary?.bytes;
   const providedDictionaryId = dictionary instanceof Uint8Array ? null : (dictionary?.id ?? null);
   const normalizedDictionary =
@@ -53,6 +56,7 @@ export function decompress(input: Uint8Array, options?: DecompressOptions): Uint
       header,
       normalizedDictionary,
       maxSize !== undefined ? maxSize - chunks.reduce((s, c) => s + c.length, 0) : undefined,
+      validateChecksum,
     );
     chunks.push(output);
     offset += bytesConsumed;

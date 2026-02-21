@@ -24,6 +24,7 @@ export function decompressFrame(
   header: FrameHeader,
   dictionary?: DecoderDictionaryContext | null,
   maxSize?: number,
+  validateChecksum = true,
 ): { output: Uint8Array; bytesConsumed: number } {
   let pos = offset + 4 + header.headerSize;
   const chunks: Uint8Array[] = [];
@@ -138,9 +139,11 @@ export function decompressFrame(
     if (pos + 4 > data.length) {
       throw new ZstdError('Content checksum truncated', 'corruption_detected');
     }
-    const storedChecksum = readU32LE(data, pos);
-    if (!validateContentChecksum(output, storedChecksum)) {
-      throw new ZstdError('Content checksum mismatch', 'corruption_detected');
+    if (validateChecksum) {
+      const storedChecksum = readU32LE(data, pos);
+      if (!validateContentChecksum(output, storedChecksum)) {
+        throw new ZstdError('Content checksum mismatch', 'corruption_detected');
+      }
     }
     pos += 4;
     return { output, bytesConsumed: pos - offset };

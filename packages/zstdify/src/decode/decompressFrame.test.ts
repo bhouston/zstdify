@@ -58,6 +58,10 @@ describe('decompressFrame', () => {
     mismatch[last] = (mismatch[last] ?? 0) ^ 0xff;
     const parsedMismatch = parseZstdFrame(mismatch, 0).header;
     expect(() => decompressFrame(mismatch, 0, parsedMismatch)).toThrowError(/checksum mismatch/i);
+    // When validateChecksum is false, wrong checksum is skipped and output is still returned
+    const result = decompressFrame(mismatch, 0, parsedMismatch, undefined, undefined, false);
+    expect(result.output).toEqual(payload);
+    expect(result.bytesConsumed).toBe(mismatch.length);
   });
 
   it('rejects frame content-size mismatch', () => {

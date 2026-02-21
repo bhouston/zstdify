@@ -7,3 +7,8 @@ node_modules
 .history
 coverage
 publish
+packages/zstdify-tests/benchmarks/bundle-size.latest.md
+.gitignore
+packages/zstdify-tests/benchmarks/bundle-size.latest.json
+packages/zstdify-tests/benchmarks/latest.json
+.gitignore

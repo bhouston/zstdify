@@ -5,12 +5,24 @@
   "type": "module",
   "scripts": {
     "test": "vitest",
-    "tsgo": "tsc --noEmit"
+    "tsgo": "tsc --noEmit",
+    "bench:node-vs-zstdify": "node scripts/benchmark-node-vs-zstdify.ts",
+    "bench:bundle-size": "node scripts/benchmark-bundle-size.ts",
+    "bench:render": "node scripts/render-benchmark-chart.ts",
+    "bench:update": "pnpm run bench:node-vs-zstdify && pnpm run bench:render",
+    "bench:update:all": "pnpm run bench:update && pnpm run bench:bundle-size"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^29.0.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^0.4.4",
     "@types/node": "^24",
     "fast-check": "^4.5.3",
+    "rollup": "^4.58.0",
+    "tinybench": "^6.0.0",
     "typescript": "^5.6.0",
+    "vega": "^5.30.0",
+    "vega-lite": "^5.22.0",
     "vitest": "^2.1.9",
     "zstddec": "^0.2.0",
     "zstdify": "workspace:*"

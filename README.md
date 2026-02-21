@@ -25,6 +25,9 @@ Pure JavaScript/TypeScript zstd compression/decompression library. No native dep
 - **Dictionary generation**:
   - Pure TypeScript dictionary training from sample payloads.
   - Zstd-inspired training options (`fastcover`/`cover`/`legacy` style knobs).
+- **Tree-shaken bundle size (Rollup + Terser, compressed)**:
+  - `zstdify/compress`: ~4.91 KiB gzip / ~4.43 KiB brotli.
+  - `zstdify/decompress`: ~7.46 KiB gzip / ~6.62 KiB brotli.
 - **Interop-focused**: `zstdify` output is decoded by the official `zstd` CLI and by the [zstddec](https://www.npmjs.com/package/zstddec) npm package; `zstd` CLI output is decoded by `zstdify`.
 - **Extensively tested**:
   - Round-trip and property-based tests.
@@ -62,7 +65,7 @@ import { generateDictionary } from 'zstdify/dictionary';
 ## API
 
 - `compress(input: Uint8Array, options?: { level?: number; checksum?: boolean; dictionary?: Uint8Array | { bytes: Uint8Array; id?: number }; noDictId?: boolean }): Uint8Array`
-- `decompress(input: Uint8Array, options?: { maxSize?: number; dictionary?: Uint8Array | { bytes: Uint8Array; id?: number } }): Uint8Array`
+- `decompress(input: Uint8Array, options?: { maxSize?: number; dictionary?: Uint8Array | { bytes: Uint8Array; id?: number }; validateChecksum?: boolean }): Uint8Array`
 - `generateDictionary(samples: Uint8Array[], options?: { maxDictSize?: number; dictId?: number; algorithm?: "fastcover" | "cover" | "legacy"; k?: number; d?: number; steps?: number; split?: number; f?: number; accel?: number; selectivity?: number; shrink?: boolean | number }): Uint8Array`
 
 Dictionary generation outputs a raw-content dictionary. If you want a specific `dictID` written into compressed frames, pass it to `compress()` via `dictionary: { bytes, id }`.
@@ -121,6 +124,36 @@ All of the following run as part of the test suite (`pnpm test` / `pnpm vitest`)
 - **Corruption**: Truncation, checksum mismatch, invalid header bits, and related error paths.
 - **Compression regression**: Compressed sizes for fixed payloads are checked against golden values (ratio stability).
 - **Decompress robustness**: Each corpus fixture is decompressed in its own test (one test per file), so the suite tracks decompress behavior per input. See [upstream zstd TESTING.md](https://github.com/facebook/zstd/blob/dev/TESTING.md) for comparison.
+
+## Benchmark: zstdify vs Node built-in zstd
+
+Throughput and compression ratio are compared against Node’s built-in `node:zlib` zstd on synthetic payloads (text, binary, repetitive) at levels 3, 5, and 9.
+
+![Benchmark: compression and decompression throughput](packages/zstdify-tests/benchmarks/latest.svg)
+
+- **Compression**: Node’s native zstd is faster (often 5–10×) due to native code; zstdify is pure JS and trades speed for portability.
+- **Decompression**: Same pattern—Node is faster; zstdify remains compatible and dependency-free.
+- **Ratio**: Compression ratios are very close; the test suite asserts zstdify is within ~10% of Node’s compressed size on the same inputs.
+
+To regenerate the chart and tables (run benchmarks and render SVG):
+
+```bash
+pnpm --filter zstdify-tests run bench:update
+```
+
+### Bundle size benchmark (Rollup)
+
+| Target | Raw | Gzip | Brotli |
+|---|---:|---:|---:|
+| zstdify/compress | 13.13 KiB | 4.91 KiB | 4.43 KiB |
+| zstdify/decompress | 24.52 KiB | 7.46 KiB | 6.62 KiB |
+| zstddec decoder + wasm | 127.37 KiB | 49.69 KiB | 40.66 KiB |
+
+To regenerate this snapshot:
+
+```bash
+pnpm --filter zstdify-tests run bench:bundle-size
+```
 
 ## Publishing
 
