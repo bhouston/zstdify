@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { compress } from 'zstdify';
 import { ZSTDDecoder } from 'zstddec';
+import { compress } from 'zstdify';
 import { makeSeededPayload } from '../helpers/payloadHelpers.js';
 
 describe('interop: zstdify -> zstddec', () => {

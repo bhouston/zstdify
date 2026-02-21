@@ -25,7 +25,14 @@ const PAYLOADS: Array<{ id: string; data: Uint8Array }> = [
   { id: 'binary-4k', data: makeBinaryPayload(4 * 1024) },
   { id: 'binary-64k', data: makeBinaryPayload(64 * 1024) },
   { id: 'repeated-byte', data: new Uint8Array(4096).fill(0x61) },
-  { id: 'sequential-256', data: (() => { const a = new Uint8Array(256); for (let i = 0; i < 256; i++) a[i] = i; return a; })() },
+  {
+    id: 'sequential-256',
+    data: (() => {
+      const a = new Uint8Array(256);
+      for (let i = 0; i < 256; i++) a[i] = i;
+      return a;
+    })(),
+  },
 ];
 
 /** Levels 3, 5, 9: zstdify level 1 is RLE/raw only (no compressed blocks), so ratio is not comparable; skip 0 for Node. */

@@ -5,14 +5,14 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as zlib from 'node:zlib';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { rollup } from 'rollup';
-import { nodeResolve } from '@rollup/plugin-node-resolve';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as zlib from 'node:zlib';
 import commonjs from '@rollup/plugin-commonjs';
+import { nodeResolve } from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
+import { rollup } from 'rollup';
 
 type SizeTriplet = {
   rawBytes: number;
@@ -97,18 +97,9 @@ async function main(): Promise<void> {
   fs.mkdirSync(TMP_DIR, { recursive: true });
 
   const bundleResults = await Promise.all([
-    bundleAndMeasure(
-      'zstdify-compress',
-      "import { compress } from 'zstdify/compress';\nexport { compress };",
-    ),
-    bundleAndMeasure(
-      'zstdify-decompress',
-      "import { decompress } from 'zstdify/decompress';\nexport { decompress };",
-    ),
-    bundleAndMeasure(
-      'zstddec-decoder',
-      "import { ZSTDDecoder } from 'zstddec';\nexport { ZSTDDecoder };",
-    ),
+    bundleAndMeasure('zstdify-compress', "import { compress } from 'zstdify/compress';\nexport { compress };"),
+    bundleAndMeasure('zstdify-decompress', "import { decompress } from 'zstdify/decompress';\nexport { decompress };"),
+    bundleAndMeasure('zstddec-decoder', "import { ZSTDDecoder } from 'zstddec';\nexport { ZSTDDecoder };"),
   ]);
 
   const zstddecModernCode = fs.readFileSync(zstddecModernPath, 'utf8');

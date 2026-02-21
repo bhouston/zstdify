@@ -41,9 +41,7 @@ function main(): void {
     process.exit(1);
   }
 
-  const summary: Summary = JSON.parse(
-    fs.readFileSync(JSON_PATH, 'utf8'),
-  ) as Summary;
+  const summary: Summary = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8')) as Summary;
 
   // Reshape for grouped bar: one row per (payloadId, level, impl, op, mbps)
   const compressRows: Array<{

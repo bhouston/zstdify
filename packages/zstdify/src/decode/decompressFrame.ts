@@ -15,7 +15,7 @@ import {
   decodeTreelessLiterals,
   parseLiteralsSectionHeader,
 } from './literals.js';
-import { executeSequences } from './reconstruct.js';
+import { appendToHistoryWindow, createHistoryWindow, executeSequences } from './reconstruct.js';
 import { decodeSequences, type SequenceTables } from './sequences.js';
 
 export function decompressFrame(
@@ -32,10 +32,7 @@ export function decompressFrame(
   const repOffsets: [number, number, number] = dictionary?.repOffsets
     ? [dictionary.repOffsets[0], dictionary.repOffsets[1], dictionary.repOffsets[2]]
     : [1, 4, 8];
-  let history: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
-  if (dictionary?.historyPrefix && dictionary.historyPrefix.length > 0) {
-    history = dictionary.historyPrefix.slice();
-  }
+  const history = createHistoryWindow(header.windowSize, dictionary?.historyPrefix);
   let prevHuffmanTable: {
     table: ReturnType<typeof import('../entropy/huffman.js').buildHuffmanDecodeTable>;
     maxNumBits: number;
@@ -53,13 +50,13 @@ export function decompressFrame(
       const literals = decodeRawLiterals(data, pos, block.blockSize);
       chunks.push(literals);
       totalSize += literals.length;
-      history = appendToHistory(history, literals, header.windowSize);
+      appendToHistoryWindow(history, literals);
       pos += block.blockSize;
     } else if (block.blockType === 1) {
       const literals = decodeRLELiterals(data, pos, block.blockSize);
       chunks.push(literals);
       totalSize += literals.length;
-      history = appendToHistory(history, literals, header.windowSize);
+      appendToHistoryWindow(history, literals);
       pos += 1;
     } else if (block.blockType === 2) {
       const blockContent = data.subarray(pos, pos + block.blockSize);
@@ -117,7 +114,7 @@ export function decompressFrame(
 
       chunks.push(output);
       totalSize += output.length;
-      history = appendToHistory(history, output, header.windowSize);
+      appendToHistoryWindow(history, output);
       pos += block.blockSize;
     } else {
       throw new ZstdError('Unsupported block type', 'corruption_detected');
@@ -150,27 +147,6 @@ export function decompressFrame(
   }
 
   return { output, bytesConsumed: pos - offset };
-}
-
-function appendToHistory(
-  history: Uint8Array<ArrayBufferLike>,
-  chunk: Uint8Array<ArrayBufferLike>,
-  windowSize: number,
-): Uint8Array<ArrayBufferLike> {
-  if (windowSize <= 0 || chunk.length === 0) {
-    return history;
-  }
-  const maxHistory = Math.max(1, windowSize);
-  if (chunk.length >= maxHistory) {
-    return new Uint8Array(chunk.subarray(chunk.length - maxHistory));
-  }
-  const keepFromHistory = Math.min(history.length, maxHistory - chunk.length);
-  const next = new Uint8Array(keepFromHistory + chunk.length);
-  if (keepFromHistory > 0) {
-    next.set(history.subarray(history.length - keepFromHistory), 0);
-  }
-  next.set(chunk, keepFromHistory);
-  return next;
 }
 
 function concatenateChunks(chunks: Uint8Array[]): Uint8Array {

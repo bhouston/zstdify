@@ -33,9 +33,7 @@ function makeBinaryPayload(size: number): Uint8Array {
 const PAYLOADS: Array<{ id: string; data: Uint8Array }> = [
   {
     id: 'small-text',
-    data: new TextEncoder().encode(
-      'hello world hello world hello world hello world hello world ',
-    ),
+    data: new TextEncoder().encode('hello world hello world hello world hello world hello world '),
   },
   { id: 'binary-1k', data: makeSeededPayload(1024, 42) },
   { id: 'binary-4k', data: makeBinaryPayload(4 * 1024) },
@@ -67,7 +65,7 @@ interface ResultRow {
 
 function mbps(bytes: number, ms: number): number {
   if (ms <= 0) return 0;
-  return (bytes / 1_000_000) / (ms / 1000);
+  return bytes / 1_000_000 / (ms / 1000);
 }
 
 async function main(): Promise<void> {
@@ -117,8 +115,7 @@ async function main(): Promise<void> {
       const getMedianMs = (taskName: string): number => {
         const t = bench.tasks.find((x) => x.name === taskName);
         if (!t?.result || t.result.state !== 'completed') return 0;
-        const lat = (t.result as { latency?: { p50: number; mean: number } })
-          .latency;
+        const lat = (t.result as { latency?: { p50: number; mean: number } }).latency;
         return lat?.p50 ?? lat?.mean ?? 0;
       };
 
@@ -185,8 +182,7 @@ async function main(): Promise<void> {
     '| Payload     | Level | zstdify | Node |',
     '|------------|-------|---------|------|',
     ...summary.throughput.map(
-      (t) =>
-        `| ${t.payloadId.padEnd(10)} | ${t.level} | ${t.ratioZstdify.toFixed(4)} | ${t.ratioNode.toFixed(4)} |`,
+      (t) => `| ${t.payloadId.padEnd(10)} | ${t.level} | ${t.ratioZstdify.toFixed(4)} | ${t.ratioNode.toFixed(4)} |`,
     ),
     '',
   ].join('\n');
