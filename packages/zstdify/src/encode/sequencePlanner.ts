@@ -9,10 +9,12 @@ export interface GreedyEncodeResult {
   literals: Uint8Array;
   sequences: Sequence[];
   trailingLiterals: number;
+  finalRepOffsets: [number, number, number];
 }
 
 export interface SequencePlannerOptions {
   history?: Uint8Array;
+  repOffsets?: [number, number, number];
   chainLimit: number;
   repScoreBonus?: [number, number, number];
   lazyDepth?: number;
@@ -142,17 +144,9 @@ function applyRepOffsetUpdate(repOffsets: [number, number, number], offsetValue:
 }
 
 function toOffsetValue(offset: number, literalsLength: number, repOffsets: [number, number, number]): { offsetValue: number; nextRepOffsets: [number, number, number] } {
-  const ll0 = literalsLength === 0;
-  let offsetValue = offset + 3;
-  if (ll0) {
-    if (offset === repOffsets[1]) offsetValue = 1;
-    else if (offset === repOffsets[2]) offsetValue = 2;
-    else if (repOffsets[0] > 1 && offset === repOffsets[0] - 1) offsetValue = 3;
-  } else {
-    if (offset === repOffsets[0]) offsetValue = 1;
-    else if (offset === repOffsets[1]) offsetValue = 2;
-    else if (offset === repOffsets[2]) offsetValue = 3;
-  }
+  // Keep conservative non-repeat offset encoding for interoperability.
+  // Repeat-offset modeling is still used for scoring/search decisions.
+  const offsetValue = offset + 3;
   return {
     offsetValue,
     nextRepOffsets: applyRepOffsetUpdate(repOffsets, offsetValue, literalsLength),
@@ -184,7 +178,12 @@ function pickMatch(parse: ParseState, pos: number): MatchCandidate | null {
 
 export function planSequences(input: Uint8Array, options: SequencePlannerOptions): GreedyEncodeResult {
   if (input.length < MIN_MATCH) {
-    return { literals: input.slice(), sequences: [], trailingLiterals: input.length };
+    return {
+      literals: input.slice(),
+      sequences: [],
+      trailingLiterals: input.length,
+      finalRepOffsets: options.repOffsets ?? [1, 4, 8],
+    };
   }
 
   const history = options.history && options.history.length > 0
@@ -198,7 +197,9 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
   const parse: ParseState = {
     input: combined,
     chainPrev: buildChainPrev(combined),
-    repOffsets: [1, 4, 8],
+    repOffsets: options.repOffsets
+      ? [options.repOffsets[0], options.repOffsets[1], options.repOffsets[2]]
+      : [1, 4, 8],
     options: {
       chainLimit: Math.max(1, options.chainLimit),
       repScoreBonus: options.repScoreBonus ?? [48, 24, 12],
@@ -249,5 +250,6 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
     literals: literalOut < literals.length ? literals.subarray(0, literalOut) : literals,
     sequences,
     trailingLiterals,
+    finalRepOffsets: [parse.repOffsets[0], parse.repOffsets[1], parse.repOffsets[2]],
   };
 }

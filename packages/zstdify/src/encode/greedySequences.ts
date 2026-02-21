@@ -8,6 +8,7 @@ export type SequenceCompressionStrategy = 'fast' | 'lazy' | 'optimal';
 export interface BuildSequenceOptions {
   strategy?: SequenceCompressionStrategy;
   history?: Uint8Array;
+  repOffsets?: [number, number, number];
 }
 
 export type { GreedyEncodeResult } from './sequencePlanner.js';
@@ -15,10 +16,10 @@ export type { GreedyEncodeResult } from './sequencePlanner.js';
 export function buildGreedySequences(input: Uint8Array, options?: BuildSequenceOptions): GreedyEncodeResult {
   const strategy = options?.strategy ?? 'fast';
   if (strategy === 'lazy') {
-    return buildLazyMatcherSequences(input, { history: options?.history });
+    return buildLazyMatcherSequences(input, { history: options?.history, repOffsets: options?.repOffsets });
   }
   if (strategy === 'optimal') {
-    return buildOptimalParserSequences(input, { history: options?.history });
+    return buildOptimalParserSequences(input, { history: options?.history, repOffsets: options?.repOffsets });
   }
-  return buildFastMatcherSequences(input, { history: options?.history });
+  return buildFastMatcherSequences(input, { history: options?.history, repOffsets: options?.repOffsets });
 }

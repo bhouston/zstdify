@@ -99,7 +99,7 @@ let cachedDecompress: DecompressFn | null = null;
 async function resolveDecompress(): Promise<DecompressFn> {
   if (cachedDecompress) return cachedDecompress;
   try {
-    const sourceMod = (await import('../../../zstdify/src/decompress.ts')) as { decompress: DecompressFn };
+    const sourceMod = (await import('../../../zstdify/dist/decompress.js')) as { decompress: DecompressFn };
     cachedDecompress = sourceMod.decompress;
     return cachedDecompress;
   } catch {
@@ -397,13 +397,13 @@ export async function runNodeInteropDivergenceDebug(
   const passDecoded = decompress(passCompressed, {
     validateChecksum: false,
     debugTrace: {
-      onBlockDecoded: (info) => passTraceBlocks.push(info),
+      onBlockDecoded: (info: DecodeTraceBlockInfo) => passTraceBlocks.push(info),
     },
   });
   const failDecoded = decompress(failCompressed, {
     validateChecksum: false,
     debugTrace: {
-      onBlockDecoded: (info) => failTraceBlocks.push(info),
+      onBlockDecoded: (info: DecodeTraceBlockInfo) => failTraceBlocks.push(info),
     },
   });
   const mismatch = findFirstMismatch(passDecoded, failDecoded);

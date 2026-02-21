@@ -75,19 +75,21 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   const blockCount = input.length === 0 ? 1 : Math.ceil(input.length / BLOCK_MAX);
   let blockIndex = 0;
   let history: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+  let repOffsets: [number, number, number] = [1, 4, 8];
   while (offset < input.length || blockIndex < blockCount) {
     const size = Math.min(BLOCK_MAX, input.length - offset);
     const last = blockIndex === blockCount - 1;
     const block = input.subarray(offset, offset + size);
     if (level > 0 && size > 0) {
       if (strategy) {
-        const plan = buildGreedySequences(block, { strategy, history });
+        const plan = buildGreedySequences(block, { strategy, history, repOffsets });
         if (plan.sequences.length > 0) {
           const payload = buildCompressedBlockPayload(plan.literals, plan.sequences);
           if (payload) {
             const compressed = writeCompressedBlock(payload, last);
             if (compressed.length < 3 + size) {
               chunks.push(compressed);
+              repOffsets = plan.finalRepOffsets;
               offset += size;
               blockIndex++;
               continue;
