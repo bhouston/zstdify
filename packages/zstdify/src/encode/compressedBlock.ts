@@ -1,5 +1,5 @@
 import type { Sequence } from '../decode/reconstruct.js';
-import { buildFSEDecodeTable, type FSEDecodeRow, normalizeCountsForTable, writeNCount } from '../entropy/fse.js';
+import { buildFSEDecodeTable, type FSEDecodeTable, normalizeCountsForTable, writeNCount } from '../entropy/fse.js';
 import { encodeReverseBitstream } from '../bitstream/reverseBitWriter.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
@@ -17,13 +17,13 @@ import {
 } from './literalsEncoder.js';
 
 // Predefined FSE tables built once and reused for sequence encoding.
-let cachedLLTable: readonly FSEDecodeRow[] | null = null;
-let cachedOFTable: readonly FSEDecodeRow[] | null = null;
-let cachedMLTable: readonly FSEDecodeRow[] | null = null;
+let cachedLLTable: FSEDecodeTable | null = null;
+let cachedOFTable: FSEDecodeTable | null = null;
+let cachedMLTable: FSEDecodeTable | null = null;
 function getPredefinedFSETables(): {
-  ll: readonly FSEDecodeRow[];
-  of: readonly FSEDecodeRow[];
-  ml: readonly FSEDecodeRow[];
+  ll: FSEDecodeTable;
+  of: FSEDecodeTable;
+  ml: FSEDecodeTable;
 } {
   if (!cachedLLTable) {
     cachedLLTable = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
@@ -56,7 +56,7 @@ function writeU24LE(arr: Uint8Array, offset: number, value: number): void {
 }
 
 const U32_ALL_BITS = 0xffff_ffff >>> 0;
-const pathTableCache = new WeakMap<readonly FSEDecodeRow[], PrecomputedPathTable>();
+const pathTableCache = new WeakMap<FSEDecodeTable, PrecomputedPathTable>();
 let pathMasksScratch: Uint32Array | null = null;
 let pathNextChoiceScratch: Int32Array | null = null;
 let sequenceReadCountsScratch: Uint8Array | null = null;
@@ -73,11 +73,11 @@ interface PrecomputedPathTable {
 }
 
 interface SequenceTablesState {
-  llTable: readonly FSEDecodeRow[];
+  llTable: FSEDecodeTable;
   llTableLog: number;
-  ofTable: readonly FSEDecodeRow[];
+  ofTable: FSEDecodeTable;
   ofTableLog: number;
-  mlTable: readonly FSEDecodeRow[];
+  mlTable: FSEDecodeTable;
   mlTableLog: number;
 }
 
@@ -155,7 +155,7 @@ function findFirstSetBitInRange(
   return (endWord << 5) + firstBitInWord(lastMasked);
 }
 
-function getPrecomputedPathTable(table: readonly FSEDecodeRow[]): PrecomputedPathTable {
+function getPrecomputedPathTable(table: FSEDecodeTable): PrecomputedPathTable {
   const cached = pathTableCache.get(table);
   if (cached) return cached;
   const tableSize = table.length;
@@ -165,27 +165,21 @@ function getPrecomputedPathTable(table: readonly FSEDecodeRow[]): PrecomputedPat
   const maxNextByState = new Int32Array(tableSize);
   let maxSymbol = -1;
   for (let s = 0; s < tableSize; s++) {
-    const row = table[s];
-    if (!row) {
-      baselineByState[s] = 0;
-      minNextByState[s] = 1;
-      maxNextByState[s] = 0;
-      continue;
-    }
-    baselineByState[s] = row.baseline;
-    const width = row.numBits > 0 ? 1 << row.numBits : 1;
-    const minNext = row.baseline;
-    const maxNext = row.baseline + width - 1;
+    const baseline = table.baseline[s]!;
+    const bits = table.numBits[s]!;
+    baselineByState[s] = baseline;
+    const width = bits > 0 ? 1 << bits : 1;
+    const minNext = baseline;
+    const maxNext = baseline + width - 1;
     minNextByState[s] = minNext < 0 ? 0 : minNext;
     maxNextByState[s] = maxNext >= tableSize ? tableSize - 1 : maxNext;
-    if (row.symbol > maxSymbol) maxSymbol = row.symbol;
+    const symbol = table.symbol[s]!;
+    if (symbol > maxSymbol) maxSymbol = symbol;
   }
   const statesBySymbol = Array.from({ length: maxSymbol + 1 }, () => [] as number[]);
   const symbolMasks = Array.from({ length: maxSymbol + 1 }, () => new Uint32Array(wordCount));
   for (let s = 0; s < tableSize; s++) {
-    const row = table[s];
-    if (!row) continue;
-    const sym = row.symbol;
+    const sym = table.symbol[s]!;
     const stateList = statesBySymbol[sym];
     const stateMask = symbolMasks[sym];
     if (!stateList || !stateMask) continue;
@@ -276,7 +270,7 @@ function encodeNumSequences(numSequences: number): Uint8Array | null {
 
 function buildStatePath(
   codes: ArrayLike<number>,
-  table: readonly FSEDecodeRow[],
+  table: FSEDecodeTable,
 ): { states: number[]; updateBits: number[] } | null {
   if (codes.length === 0) return { states: [], updateBits: [] };
   const pre = getPrecomputedPathTable(table);
@@ -360,7 +354,7 @@ interface SymbolizedSequences {
 
 interface StreamChoice {
   mode: 0 | 2 | 3;
-  table: readonly FSEDecodeRow[];
+  table: FSEDecodeTable;
   tableLog: number;
   path: { states: number[]; updateBits: number[] };
   tableHeader: Uint8Array;
@@ -385,26 +379,26 @@ function buildHistogram(codes: ArrayLike<number>, alphabetSize: number): Uint32A
   return out;
 }
 
-function scorePath(path: { states: number[] }, table: readonly FSEDecodeRow[], tableLog: number): number {
+function scorePath(path: { states: number[] }, table: FSEDecodeTable, tableLog: number): number {
   if (path.states.length === 0) return 0;
   let bits = tableLog;
   for (let i = 0; i < path.states.length - 1; i++) {
-    const row = table[path.states[i] ?? 0];
-    if (!row) return Number.POSITIVE_INFINITY;
-    bits += row.numBits;
+    const state = path.states[i] ?? -1;
+    if (state < 0 || state >= table.length) return Number.POSITIVE_INFINITY;
+    bits += table.numBits[state]!;
   }
   return bits;
 }
 
 const normalizedTableCache = new Map<
   string,
-  { table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }
+  { table: FSEDecodeTable; tableLog: number; header: Uint8Array }
 >();
 
 function getNormalizedTableCandidates(
   codes: ArrayLike<number>,
   maxTableLog: number,
-): Array<{ table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }> {
+): Array<{ table: FSEDecodeTable; tableLog: number; header: Uint8Array }> {
   const alphabetSize = symbolRange(codes);
   if (alphabetSize <= 0) return [];
   const histogram = buildHistogram(codes, alphabetSize);
@@ -418,7 +412,7 @@ function getNormalizedTableCandidates(
   if (1 << minTableLog < distinct) return [];
   const maxLogFromSamples = codes.length > 1 ? 31 - Math.clz32(codes.length - 1) : 5;
   const limit = Math.max(minTableLog, Math.min(maxTableLog, maxLogFromSamples + 1));
-  const results: Array<{ table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }> = [];
+  const results: Array<{ table: FSEDecodeTable; tableLog: number; header: Uint8Array }> = [];
   const histogramKey = Array.from(histogram).join(',');
   for (let tableLog = minTableLog; tableLog <= limit; tableLog++) {
     const key = `${tableLog}:${histogramKey}`;
@@ -480,10 +474,10 @@ function symbolizedSequences(sequences: readonly Sequence[]): SymbolizedSequence
 
 function chooseStreamMode(
   codes: ArrayLike<number>,
-  predefinedTable: readonly FSEDecodeRow[],
+  predefinedTable: FSEDecodeTable,
   predefinedTableLog: number,
   maxTableLog: number,
-  prevTable: readonly FSEDecodeRow[] | null,
+  prevTable: FSEDecodeTable | null,
   prevTableLog: number | null,
 ): StreamChoice | null {
   const predefinedPath = buildStatePath(codes, predefinedTable);
@@ -598,15 +592,21 @@ function buildSequenceSection(
       const llState = llStates[i]!;
       const mlState = mlStates[i]!;
       const ofState = ofStates[i]!;
-      const llRow = llChoice.table[llState];
-      const mlRow = mlChoice.table[mlState];
-      const ofRow = ofChoice.table[ofState];
-      if (!llRow || !mlRow || !ofRow) return null;
-      readCounts[readPos] = llRow.numBits;
+      if (
+        llState < 0 ||
+        llState >= llChoice.table.length ||
+        mlState < 0 ||
+        mlState >= mlChoice.table.length ||
+        ofState < 0 ||
+        ofState >= ofChoice.table.length
+      ) {
+        return null;
+      }
+      readCounts[readPos] = llChoice.table.numBits[llState]!;
       readValues[readPos++] = llUpdates[i]!;
-      readCounts[readPos] = mlRow.numBits;
+      readCounts[readPos] = mlChoice.table.numBits[mlState]!;
       readValues[readPos++] = mlUpdates[i]!;
-      readCounts[readPos] = ofRow.numBits;
+      readCounts[readPos] = ofChoice.table.numBits[ofState]!;
       readValues[readPos++] = ofUpdates[i]!;
     }
   }

@@ -6,9 +6,11 @@
 import type { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
 import { ZstdError } from '../errors.js';
 
-export interface HuffmanDecodeRow {
-  symbol: number;
-  numBits: number;
+export interface HuffmanDecodeTable {
+  symbol: Uint8Array;
+  numBits: Uint8Array;
+  maxNumBits: number;
+  length: number;
 }
 
 /**
@@ -29,9 +31,10 @@ export function weightsToNumBits(weights: readonly number[], maxNumBits: number)
  * Build Huffman decode table from symbol bit lengths.
  * Returns table indexed by prefix code (first maxNumBits bits).
  */
-export function buildHuffmanDecodeTable(numBits: readonly number[], maxNumBits: number): HuffmanDecodeRow[] {
+export function buildHuffmanDecodeTable(numBits: readonly number[], maxNumBits: number): HuffmanDecodeTable {
   const tableSize = 1 << maxNumBits;
-  const table: HuffmanDecodeRow[] = new Array(tableSize);
+  const symbolByPrefix = new Uint8Array(tableSize);
+  const bitsByPrefix = new Uint8Array(tableSize);
   const rankCount = new Array<number>(maxNumBits + 1).fill(0);
   for (let s = 0; s < numBits.length; s++) {
     const len = numBits[s] ?? 0;
@@ -57,28 +60,39 @@ export function buildHuffmanDecodeTable(numBits: readonly number[], maxNumBits: 
     const code = rankIdx[len] ?? 0;
     const span = 1 << (maxNumBits - len);
     for (let i = 0; i < span; i++) {
-      table[code + i] = { symbol, numBits: len };
+      symbolByPrefix[code + i] = symbol;
+      bitsByPrefix[code + i] = len;
     }
     rankIdx[len] = code + span;
   }
 
-  return table;
+  return {
+    symbol: symbolByPrefix,
+    numBits: bitsByPrefix,
+    maxNumBits,
+    length: tableSize,
+  };
 }
 
 /**
  * Decode one Huffman symbol. Reader must be positioned at start of code.
  */
 export function decodeHuffmanSymbol(
-  table: readonly HuffmanDecodeRow[],
+  table: HuffmanDecodeTable,
   maxNumBits: number,
   reader: BitReaderReverse,
 ): number {
   const peek = reader.readBits(maxNumBits);
-  const row = table[peek];
-  if (!row) throw new ZstdError('Huffman invalid code', 'corruption_detected');
-  const unread = maxNumBits - row.numBits;
+  if (peek < 0 || peek >= table.length) {
+    throw new ZstdError('Huffman invalid code', 'corruption_detected');
+  }
+  const bits = table.numBits[peek]!;
+  if (bits === 0) {
+    throw new ZstdError('Huffman invalid code', 'corruption_detected');
+  }
+  const unread = maxNumBits - bits;
   if (unread > 0) {
     reader.unreadBits(unread);
   }
-  return row.symbol;
+  return table.symbol[peek]!;
 }

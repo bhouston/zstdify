@@ -155,12 +155,12 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
   const codeBySymbol = new Int32Array(256).fill(-1);
   const numBitsBySymbol = new Uint8Array(256);
   for (let i = 0; i < decodeTable.length; i++) {
-    const row = decodeTable[i];
-    if (!row) continue;
-    const symbol = row.symbol >>> 0;
+    const bits = decodeTable.numBits[i]!;
+    if (bits === 0) continue;
+    const symbol = decodeTable.symbol[i]! >>> 0;
     if (symbol >= codeBySymbol.length) return null;
     if ((codeBySymbol[symbol] ?? -1) < 0) codeBySymbol[symbol] = i;
-    numBitsBySymbol[symbol] = row.numBits;
+    numBitsBySymbol[symbol] = bits;
   }
   for (let i = 0; i < literals.length; i++) {
     const sym = literals[i] ?? 0;

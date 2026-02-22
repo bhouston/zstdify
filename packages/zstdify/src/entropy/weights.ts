@@ -94,26 +94,36 @@ export function readWeightsFSE(
   const state2 = { value: readBitsZeroExtended(tableLog) };
 
   while (weights.length < 255) {
-    const row1 = table[state1.value];
-    if (!row1) throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
-    weights.push(row1.symbol);
-    state1.value = row1.baseline + readBitsZeroExtended(row1.numBits);
+    if (state1.value < 0 || state1.value >= table.length) {
+      throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
+    }
+    const sym1 = table.symbol[state1.value]!;
+    const bits1 = table.numBits[state1.value]!;
+    const baseline1 = table.baseline[state1.value]!;
+    weights.push(sym1);
+    state1.value = baseline1 + readBitsZeroExtended(bits1);
     if (bitOffset < 0) {
-      const tail = table[state2.value];
-      if (!tail) throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
-      weights.push(tail.symbol);
+      if (state2.value < 0 || state2.value >= table.length) {
+        throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
+      }
+      weights.push(table.symbol[state2.value]!);
       break;
     }
     if (weights.length >= 255) break;
 
-    const row2 = table[state2.value];
-    if (!row2) throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
-    weights.push(row2.symbol);
-    state2.value = row2.baseline + readBitsZeroExtended(row2.numBits);
+    if (state2.value < 0 || state2.value >= table.length) {
+      throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
+    }
+    const sym2 = table.symbol[state2.value]!;
+    const bits2 = table.numBits[state2.value]!;
+    const baseline2 = table.baseline[state2.value]!;
+    weights.push(sym2);
+    state2.value = baseline2 + readBitsZeroExtended(bits2);
     if (bitOffset < 0) {
-      const tail = table[state1.value];
-      if (!tail) throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
-      weights.push(tail.symbol);
+      if (state1.value < 0 || state1.value >= table.length) {
+        throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
+      }
+      weights.push(table.symbol[state1.value]!);
       break;
     }
   }

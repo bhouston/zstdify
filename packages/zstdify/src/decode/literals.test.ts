@@ -112,9 +112,9 @@ describe('decodeCompressedLiterals regression', () => {
         reader.skipPadding();
         for (let i = 0; i < count; i++) {
           const peek = reader.readBits(maxNumBits);
-          const row = table[peek];
-          if (!row) return null;
-          out[i] = row.symbol;
+          if (peek < 0 || peek >= table.length) return null;
+          if ((table.numBits[peek] ?? 0) === 0) return null;
+          out[i] = table.symbol[peek]!;
         }
         return out;
       } catch {

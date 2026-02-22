@@ -5,8 +5,8 @@ import { buildHuffmanDecodeTable, decodeHuffmanSymbol } from './huffman.js';
 describe('Huffman', () => {
   it('builds canonical decode table in rank order', () => {
     const table = buildHuffmanDecodeTable([1, 2, 2], 2);
-    expect(table.map((r) => r?.symbol)).toEqual([1, 2, 0, 0]);
-    expect(table.map((r) => r?.numBits)).toEqual([2, 2, 1, 1]);
+    expect(Array.from(table.symbol)).toEqual([1, 2, 0, 0]);
+    expect(Array.from(table.numBits)).toEqual([2, 2, 1, 1]);
   });
 
   it('decode consumes symbol bit length (not max bits)', () => {

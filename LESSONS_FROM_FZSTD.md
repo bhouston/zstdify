@@ -28,14 +28,14 @@ This document captures what we learned by comparing `fzstd` against `zstdify`, f
 - `fzstd` does block parse + literals + sequence decode + match execution in one dense path with local variables.
 - `zstdify` uses cleaner modular stages (`literals` -> `sequences` -> `reconstruct`), which is easier to reason about but adds function and data handoff overhead.
 
-**Lesson:** Keep modular correctness path, but introduce a specialized fused fast path for common compressed blocks.
+**Lesson:** Keep modular correctness path, but introduce a specialized fused fast path for common compressed blocks.  Test the paths against each other.
 
 ## 3) Bitstream operations are aggressively inlined
 
 - `fzstd` inlines many bit operations directly inside hot loops.
 - `zstdify` uses robust reader abstractions (`BitReaderReverse`) with additional checks/indirection.
 
-**Lesson:** Preserve safe generic readers, but add optional internal fast helpers for hot decode loops where bounds are already validated.
+**Lesson:** Preserve safe generic readers, but add optional internal fast helpers for hot decode loops where bounds are already validated.  Test the fast path with the robust reader abstractions to ensure they behave the same.
 
 ## 4) Fewer temporary allocations during decode
 

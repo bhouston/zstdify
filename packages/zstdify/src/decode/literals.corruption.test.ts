@@ -77,7 +77,12 @@ describe('literals corruption handling', () => {
 
   it('rejects malformed Huffman stream termination in 4-stream treeless mode', () => {
     const malformedTable: Parameters<typeof decodeTreelessLiterals>[5] = {
-      table: [{ symbol: 0, numBits: 2 } as { symbol: number; numBits: number }],
+      table: {
+        symbol: new Uint8Array([0, 0, 0, 0]),
+        numBits: new Uint8Array([2, 2, 2, 2]),
+        maxNumBits: 2,
+        length: 4,
+      },
       maxNumBits: 2,
     };
     const data = new Uint8Array([0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x01, 0x01, 0x01]);

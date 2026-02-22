@@ -4,7 +4,7 @@
  */
 
 import { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
-import { buildFSEDecodeTable, type FSEDecodeRow, readNCount } from '../entropy/fse.js';
+import { buildFSEDecodeTable, type FSEDecodeTable, readNCount } from '../entropy/fse.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
   LITERALS_LENGTH_TABLE_LOG,
@@ -48,11 +48,11 @@ const DEFAULT_SEQUENCE_TABLES: SequenceTables = {
 export type CompressionMode = 0 | 1 | 2 | 3;
 
 export interface SequenceTables {
-  llTable: FSEDecodeRow[];
+  llTable: FSEDecodeTable;
   llTableLog: number;
-  ofTable: FSEDecodeRow[];
+  ofTable: FSEDecodeTable;
   ofTableLog: number;
-  mlTable: FSEDecodeRow[];
+  mlTable: FSEDecodeTable;
   mlTableLog: number;
 }
 
@@ -73,7 +73,7 @@ export interface SequenceSectionMetadata {
   mlTableLog: number;
 }
 
-function buildRLETable(symbol: number, tableLog: number): FSEDecodeRow[] {
+function buildRLETable(symbol: number, tableLog: number): FSEDecodeTable {
   const cache = tableLog === 5 ? RLE_TABLE_CACHE_5 : tableLog === 6 ? RLE_TABLE_CACHE_6 : null;
   if (cache) {
     const cached = cache[symbol];
@@ -82,18 +82,28 @@ function buildRLETable(symbol: number, tableLog: number): FSEDecodeRow[] {
     }
   }
   const tableSize = 1 << tableLog;
-  const table: FSEDecodeRow[] = new Array(tableSize);
+  const symbolByState = new Uint16Array(tableSize);
+  const bitsByState = new Uint8Array(tableSize);
+  const baselineByState = new Int32Array(tableSize);
   for (let i = 0; i < tableSize; i++) {
-    table[i] = { symbol, numBits: tableLog, baseline: 0 };
+    symbolByState[i] = symbol;
+    bitsByState[i] = tableLog;
   }
+  const table: FSEDecodeTable = {
+    symbol: symbolByState,
+    numBits: bitsByState,
+    baseline: baselineByState,
+    tableLog,
+    length: tableSize,
+  };
   if (cache) {
     cache[symbol] = table;
   }
   return table;
 }
 
-const RLE_TABLE_CACHE_5: Array<FSEDecodeRow[] | undefined> = new Array(256);
-const RLE_TABLE_CACHE_6: Array<FSEDecodeRow[] | undefined> = new Array(256);
+const RLE_TABLE_CACHE_5: Array<FSEDecodeTable | undefined> = new Array(256);
+const RLE_TABLE_CACHE_6: Array<FSEDecodeTable | undefined> = new Array(256);
 
 export function decodeSequences(
   data: Uint8Array,
@@ -251,15 +261,19 @@ export function decodeSequences(
   for (let i = 0; i < numSequences; i++) {
     const isLast = i === numSequences - 1;
     // Per spec, sequence tuple decode order is OF, ML, LL.
-    const ofRow = ofTable[stateOF];
-    const mlRow = mlTable[stateML];
-    const llRow = llTable[stateLL];
-    if (!ofRow || !mlRow || !llRow) {
+    if (
+      stateOF < 0 ||
+      stateOF >= ofTable.length ||
+      stateML < 0 ||
+      stateML >= mlTable.length ||
+      stateLL < 0 ||
+      stateLL >= llTable.length
+    ) {
       throw new ZstdError('FSE invalid state', 'corruption_detected');
     }
-    const offsetCode = ofRow.symbol;
-    const mlCode = mlRow.symbol;
-    const llCode = llRow.symbol;
+    const offsetCode = ofTable.symbol[stateOF]!;
+    const mlCode = mlTable.symbol[stateML]!;
+    const llCode = llTable.symbol[stateLL]!;
 
     const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? reader.readBits(offsetCode) : 0);
 
@@ -284,9 +298,12 @@ export function decodeSequences(
 
     if (!isLast) {
       // State updates for next sequence are LL, ML, OF.
-      stateLL = llRow.baseline + (llRow.numBits > 0 ? reader.readBits(llRow.numBits) : 0);
-      stateML = mlRow.baseline + (mlRow.numBits > 0 ? reader.readBits(mlRow.numBits) : 0);
-      stateOF = ofRow.baseline + (ofRow.numBits > 0 ? reader.readBits(ofRow.numBits) : 0);
+      const llBits = llTable.numBits[stateLL]!;
+      const mlBits = mlTable.numBits[stateML]!;
+      const ofBits = ofTable.numBits[stateOF]!;
+      stateLL = llTable.baseline[stateLL]! + (llBits > 0 ? reader.readBits(llBits) : 0);
+      stateML = mlTable.baseline[stateML]! + (mlBits > 0 ? reader.readBits(mlBits) : 0);
+      stateOF = ofTable.baseline[stateOF]! + (ofBits > 0 ? reader.readBits(ofBits) : 0);
     }
   }
 

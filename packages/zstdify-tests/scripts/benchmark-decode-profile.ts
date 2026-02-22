@@ -10,8 +10,14 @@
  */
 
 import zlib from 'node:zlib';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { compress, type DecoderContext, decompress } from 'zstdify';
 import { loadBenchCorpus, selectProfilePayload } from './bench-corpus.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BENCH_DIR = path.join(__dirname, '..', 'benchmarks');
 
 function parseTurns(argv: string[]): number {
   const flagIndex = argv.indexOf('--turns');
@@ -54,21 +60,26 @@ function main(): void {
   }
   const elapsedMs = performance.now() - started;
 
-  console.log(
-    JSON.stringify(
-      {
-        turns,
-        payloadId: payload.id,
-        payloadCategory: payload.category,
-        payloadBytes: payload.data.length,
-        elapsedMs: Number(elapsedMs.toFixed(2)),
-        decodeOps: turns * 2,
-        checksum,
-      },
-      null,
-      2,
-    ),
-  );
+  const summary = {
+    version: 1,
+    timestamp: new Date().toISOString(),
+    nodeVersion: process.version,
+    turns,
+    payloadId: payload.id,
+    payloadCategory: payload.category,
+    payloadBytes: payload.data.length,
+    elapsedMs: Number(elapsedMs.toFixed(2)),
+    decodeOps: turns * 2,
+    decodeOpsPerSecond: Number(((turns * 2 * 1000) / elapsedMs).toFixed(2)),
+    checksum,
+  };
+
+  fs.mkdirSync(BENCH_DIR, { recursive: true });
+  const outPath = path.join(BENCH_DIR, 'decode-profile.latest.json');
+  fs.writeFileSync(outPath, `${JSON.stringify(summary, null, 2)}\n`);
+
+  console.log(JSON.stringify(summary, null, 2));
+  console.log(`Wrote ${outPath}`);
 }
 
 main();

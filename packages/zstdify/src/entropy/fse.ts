@@ -6,10 +6,12 @@
 import type { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
 import { ZstdError } from '../errors.js';
 
-export interface FSEDecodeRow {
-  symbol: number;
-  numBits: number;
-  baseline: number;
+export interface FSEDecodeTable {
+  symbol: Uint16Array;
+  numBits: Uint8Array;
+  baseline: Int32Array;
+  tableLog: number;
+  length: number;
 }
 
 const FSE_MIN_TABLELOG = 5;
@@ -20,7 +22,7 @@ const FSE_TABLESTEP = (tableSize: number) => (tableSize >> 1) + (tableSize >> 3)
  * Counts are -1 for "less than 1" (full state reset) symbols.
  * Based on zstd FSE_buildDTable logic.
  */
-export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableLog: number): FSEDecodeRow[] {
+export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableLog: number): FSEDecodeTable {
   if (!normalizedCounter || normalizedCounter.length === 0) {
     throw new ZstdError('FSE: invalid normalized counter', 'corruption_detected');
   }
@@ -57,7 +59,9 @@ export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableL
     }
   }
 
-  const table: FSEDecodeRow[] = new Array(tableSize);
+  const symbolByState = new Uint16Array(tableSize);
+  const numBitsByState = new Uint8Array(tableSize);
+  const baselineByState = new Int32Array(tableSize);
   for (let u = 0; u < tableSize; u++) {
     const symbol = tableSymbol[u];
     if (symbol === undefined) {
@@ -69,26 +73,36 @@ export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableL
 
     const nbBits = tableLog - 31 + Math.clz32(nextState);
     const baseline = (nextState << nbBits) - tableSize;
-    table[u] = { symbol, numBits: nbBits, baseline };
+    symbolByState[u] = symbol;
+    numBitsByState[u] = nbBits;
+    baselineByState[u] = baseline;
   }
 
-  return table;
+  return {
+    symbol: symbolByState,
+    numBits: numBitsByState,
+    baseline: baselineByState,
+    tableLog,
+    length: tableSize,
+  };
 }
 
 /**
  * Decode one FSE symbol. Updates state in place.
  */
 export function decodeFSESymbol(
-  table: readonly FSEDecodeRow[],
+  table: FSEDecodeTable,
   _tableLog: number,
   reader: BitReaderReverse,
   state: { value: number },
 ): number {
-  const row = table[state.value];
-  if (!row) throw new ZstdError('FSE invalid state', 'corruption_detected');
-  const symbol = row.symbol;
-  const nbBits = row.numBits;
-  const baseline = row.baseline;
+  const stateValue = state.value;
+  if (stateValue < 0 || stateValue >= table.length) {
+    throw new ZstdError('FSE invalid state', 'corruption_detected');
+  }
+  const symbol = table.symbol[stateValue]!;
+  const nbBits = table.numBits[stateValue]!;
+  const baseline = table.baseline[stateValue]!;
   const bits = nbBits > 0 ? reader.readBits(nbBits) : 0;
   state.value = baseline + bits;
   return symbol;

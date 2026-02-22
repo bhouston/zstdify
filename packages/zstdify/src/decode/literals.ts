@@ -167,15 +167,18 @@ function decodeHuffmanStreamByCountInto(
   for (let i = 0; i < numSymbols; i++) {
     // Peek max bits to index the table, then consume only the symbol bit length.
     const peek = reader.readBits(maxNumBits);
-    const row = table[peek];
-    if (!row) {
+    if (peek < 0 || peek >= table.length) {
       throw new ZstdError('Huffman invalid code', 'corruption_detected');
     }
-    const overshoot = maxNumBits - row.numBits;
+    const numBits = table.numBits[peek]!;
+    if (numBits === 0) {
+      throw new ZstdError('Huffman invalid code', 'corruption_detected');
+    }
+    const overshoot = maxNumBits - numBits;
     if (overshoot > 0) {
       reader.unreadBits(overshoot);
     }
-    out[outOffset + written] = row.symbol;
+    out[outOffset + written] = table.symbol[peek]!;
     written++;
   }
   return written;
@@ -221,18 +224,20 @@ function decodeHuffmanStreamToEndInto(
   let state = readBitsZeroExtended(maxNumBits);
   let written = 0;
   while (bitOffset > -maxNumBits) {
-    const row = table[state];
-    if (!row) {
+    if (state < 0 || state >= table.length) {
+      throw new ZstdError('Huffman invalid code', 'corruption_detected');
+    }
+    const numBits = table.numBits[state]!;
+    if (numBits === 0) {
       throw new ZstdError('Huffman invalid code', 'corruption_detected');
     }
     if (outOffset + written >= out.length) {
       throw new ZstdError('Huffman literals size mismatch', 'corruption_detected');
     }
-    out[outOffset + written] = row.symbol;
+    out[outOffset + written] = table.symbol[state]!;
     written++;
-    const nb = row.numBits;
-    const rest = nb > 0 ? readBitsZeroExtended(nb) : 0;
-    state = ((state << nb) & mask) + rest;
+    const rest = readBitsZeroExtended(numBits);
+    state = ((state << numBits) & mask) + rest;
   }
   if (bitOffset !== -maxNumBits) {
     throw new ZstdError('Huffman stream did not end cleanly', 'corruption_detected');

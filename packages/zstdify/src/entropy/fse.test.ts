@@ -27,7 +27,10 @@ describe('FSE', () => {
   it('buildFSEDecodeTable from predefined literals length', () => {
     const table = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
     expect(table.length).toBe(1 << LITERALS_LENGTH_TABLE_LOG);
-    expect(table.every((r) => r.symbol >= 0 && r.numBits >= 0)).toBe(true);
+    for (let i = 0; i < table.length; i++) {
+      expect(table.symbol[i]).toBeGreaterThanOrEqual(0);
+      expect(table.numBits[i]).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it('decodeFSESymbol updates state', () => {

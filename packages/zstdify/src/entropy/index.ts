@@ -1,6 +1,6 @@
-export type { FSEDecodeRow } from './fse.js';
+export type { FSEDecodeTable } from './fse.js';
 export { buildFSEDecodeTable, decodeFSESymbol, readNCount } from './fse.js';
-export type { HuffmanDecodeRow } from './huffman.js';
+export type { HuffmanDecodeTable } from './huffman.js';
 export {
   buildHuffmanDecodeTable,
   decodeHuffmanSymbol,

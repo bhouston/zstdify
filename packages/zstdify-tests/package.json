@@ -11,6 +11,8 @@
     "bench:fetch-data": "node scripts/fetch-bench-data.ts",
     "bench:node-vs-zstdify": "pnpm run bench:prepare && node scripts/benchmark-node-vs-zstdify.ts",
     "bench:decode-only": "pnpm run bench:prepare && node scripts/benchmark-decode-only.ts",
+    "bench:decode:assert": "node scripts/assert-decode-bench.ts",
+    "bench:decode:gated": "pnpm run bench:decode-only && pnpm run bench:decode:assert",
     "bench:decode-profile": "pnpm run bench:prepare && node --cpu-prof --cpu-prof-name=zstdify-decode-profile.cpuprofile scripts/benchmark-decode-profile.ts",
     "bench:encode-profile": "pnpm run bench:prepare && node --cpu-prof --cpu-prof-name=zstdify-encode-profile.cpuprofile scripts/benchmark-encode-profile.ts",
     "bench:micro-hotpaths": "pnpm run bench:prepare && node scripts/benchmark-micro-hotpaths.ts",
@@ -18,7 +20,7 @@
     "bench:render": "node scripts/render-benchmark-chart.ts",
     "bench:update": "pnpm run bench:fetch-data && pnpm run bench:node-vs-zstdify && pnpm run bench:render",
     "bench:update:all": "pnpm run bench:update && pnpm run bench:bundle-size",
-    "bench:phase0-baseline": "pnpm run bench:fetch-data && pnpm run bench:node-vs-zstdify && pnpm run bench:decode-only && pnpm run bench:render && pnpm run bench:micro-hotpaths"
+    "bench:phase0-baseline": "pnpm run bench:fetch-data && pnpm run bench:node-vs-zstdify && pnpm run bench:decode-only && pnpm run bench:decode:assert && pnpm run bench:decode-profile && pnpm run bench:render && pnpm run bench:micro-hotpaths"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^29.0.0",
