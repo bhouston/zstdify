@@ -1,6 +1,6 @@
+import { encodeReverseBitstream } from '../bitstream/reverseBitWriter.js';
 import type { Sequence } from '../decode/reconstruct.js';
 import { buildFSEDecodeTable, type FSEDecodeTable, normalizeCountsForTable, writeNCount } from '../entropy/fse.js';
-import { encodeReverseBitstream } from '../bitstream/reverseBitWriter.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
   LITERALS_LENGTH_TABLE_LOG,
@@ -647,7 +647,13 @@ function chooseStreamMode(
       if (repeatPath) {
         const repeatScore = scorePath(repeatPath, prevTable, prevTableLog);
         if (repeatScore < bestScore) {
-          best = { mode: 3, table: prevTable, tableLog: prevTableLog, path: repeatPath, tableHeader: new Uint8Array(0) };
+          best = {
+            mode: 3,
+            table: prevTable,
+            tableLog: prevTableLog,
+            path: repeatPath,
+            tableHeader: new Uint8Array(0),
+          };
           bestScore = repeatScore;
         }
       }

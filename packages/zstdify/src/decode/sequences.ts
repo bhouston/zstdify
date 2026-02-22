@@ -260,7 +260,7 @@ export function decodeSequences(
   const ofTableLength = ofTable.length;
   const mlTableLength = mlTable.length;
   const hasInvalidState = (ll: number, of: number, ml: number): boolean =>
-    (of >>> 0) >= ofTableLength || (ml >>> 0) >= mlTableLength || (ll >>> 0) >= llTableLength;
+    of >>> 0 >= ofTableLength || ml >>> 0 >= mlTableLength || ll >>> 0 >= llTableLength;
   if (hasInvalidState(stateLL, stateOF, stateML)) {
     throw new ZstdError('FSE invalid state', 'corruption_detected');
   }

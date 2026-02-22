@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { executeSequences, executeSequencesInto, executeSequencesIntoFast, packSequences, type Sequence } from './reconstruct.js';
+import {
+  executeSequences,
+  executeSequencesInto,
+  executeSequencesIntoFast,
+  packSequences,
+  type Sequence,
+} from './reconstruct.js';
 
 describe('executeSequences', () => {
   it('does not over-allocate output when sequences consume literals', () => {

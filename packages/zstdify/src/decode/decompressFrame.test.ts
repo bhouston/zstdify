@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BitWriter } from '../bitstream/bitWriter.js';
 import { readU32LE } from '../bitstream/littleEndian.js';
-import { writeRawBlock, writeRLEBlock } from '../encode/blockWriter.js';
 import { compress } from '../compress.js';
+import { writeRawBlock, writeRLEBlock } from '../encode/blockWriter.js';
 import { writeFrameHeader } from '../encode/frameWriter.js';
 import { computeContentChecksum32 } from '../frame/checksum.js';
 import { parseZstdFrame } from '../frame/frameHeader.js';

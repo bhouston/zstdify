@@ -65,7 +65,9 @@ export class BitReaderReverse {
 
       const low = word0 >>> bitInByte;
       const highBits = n - (32 - bitInByte);
-      const word1 = hasEightBytes ? readU32LEFast(this.data, byteIndex + 4) : readU32LEBounded(this.data, byteIndex + 4);
+      const word1 = hasEightBytes
+        ? readU32LEFast(this.data, byteIndex + 4)
+        : readU32LEBounded(this.data, byteIndex + 4);
       const high = ((word1 & BIT_MASKS[highBits]!) << (32 - bitInByte)) >>> 0;
       const merged = (low | high) >>> 0;
       return n === 32 ? merged : (merged & BIT_MASKS[n]!) >>> 0;

@@ -1,4 +1,4 @@
-import { type GreedyEncodeResult, type SequencePlannerState, planSequences } from './sequencePlanner.js';
+import { type GreedyEncodeResult, planSequences, type SequencePlannerState } from './sequencePlanner.js';
 
 export interface OptimalParserOptions {
   history?: Uint8Array;

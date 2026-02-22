@@ -93,7 +93,11 @@ function buildChainPrev(data: Uint8Array, historyLength: number, plannerState?: 
   return chainPrev;
 }
 
-function updatePlannerState(plannerState: SequencePlannerState | undefined, combined: Uint8Array, chainPrev: Int32Array): void {
+function updatePlannerState(
+  plannerState: SequencePlannerState | undefined,
+  combined: Uint8Array,
+  chainPrev: Int32Array,
+): void {
   if (!plannerState) return;
   const historyStart = Math.max(0, combined.length - WINDOW_SIZE);
   const historyLength = combined.length - historyStart;

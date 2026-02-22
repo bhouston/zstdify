@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * Focused decode profiler:
  * - compress corpus payloads once
@@ -9,10 +10,10 @@
  *   node --cpu-prof --cpu-prof-name=zstdify-decode-profile.cpuprofile scripts/benchmark-decode-profile.ts --turns 120000
  */
 
-import zlib from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
 import { compress, type DecoderContext, decompress } from 'zstdify';
 import { loadBenchCorpus, selectProfilePayload } from './bench-corpus.ts';
 

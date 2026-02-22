@@ -9,6 +9,7 @@ import { validateContentChecksum } from '../frame/checksum.js';
 import type { FrameHeader } from '../frame/frameHeader.js';
 import { parseBlockHeader } from './block.js';
 import type { DecodeTrace, DecodeTraceLiteralsInfo, DecodeTraceSequencesInfo } from './debugTrace.js';
+import { decodeAndExecuteSequencesInto, shouldUseFusedSequencePath } from './fusedSequences.js';
 import {
   decodeCompressedLiterals,
   decodeRawLiterals,
@@ -25,7 +26,6 @@ import {
   executeSequencesIntoFast,
   getOrCreateHistoryWindow,
 } from './reconstruct.js';
-import { decodeAndExecuteSequencesInto, shouldUseFusedSequencePath } from './fusedSequences.js';
 import { decodeSequences, type SequenceTables } from './sequences.js';
 
 export function decompressFrame(

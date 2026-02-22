@@ -1,6 +1,6 @@
 import type { PackedSequences } from './reconstruct.js';
 import { executeSequencesIntoFast, type HistoryWindow } from './reconstruct.js';
-import { decodeSequences, type DecodeSequencesResult, type SequenceTables } from './sequences.js';
+import { type DecodeSequencesResult, decodeSequences, type SequenceTables } from './sequences.js';
 
 export interface FusedDecodeExecuteResult {
   written: number;

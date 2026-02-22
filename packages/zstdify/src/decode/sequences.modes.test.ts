@@ -61,11 +61,29 @@ describe('decodeSequences modes and extended counts', () => {
 
   it('rejects invalid state row when repeated tables are structurally invalid', () => {
     const invalidTables: SequenceTables = {
-      llTable: { symbol: new Uint16Array(0), numBits: new Uint8Array(0), baseline: new Int32Array(0), tableLog: 1, length: 0 },
+      llTable: {
+        symbol: new Uint16Array(0),
+        numBits: new Uint8Array(0),
+        baseline: new Int32Array(0),
+        tableLog: 1,
+        length: 0,
+      },
       llTableLog: 1,
-      ofTable: { symbol: new Uint16Array(0), numBits: new Uint8Array(0), baseline: new Int32Array(0), tableLog: 1, length: 0 },
+      ofTable: {
+        symbol: new Uint16Array(0),
+        numBits: new Uint8Array(0),
+        baseline: new Int32Array(0),
+        tableLog: 1,
+        length: 0,
+      },
       ofTableLog: 1,
-      mlTable: { symbol: new Uint16Array(0), numBits: new Uint8Array(0), baseline: new Int32Array(0), tableLog: 1, length: 0 },
+      mlTable: {
+        symbol: new Uint16Array(0),
+        numBits: new Uint8Array(0),
+        baseline: new Int32Array(0),
+        tableLog: 1,
+        length: 0,
+      },
       mlTableLog: 1,
     };
     const data = new Uint8Array([0x01, 0xfc, 0x80]);
