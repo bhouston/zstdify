@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BitReaderReverse } from '../bitstream/bitReaderReverse.js';
-import { buildFSEDecodeTable, decodeFSESymbol, readNCount } from './fse.js';
+import { buildFSEDecodeTable, decodeFSESymbol, normalizeCountsForTable, readNCount, writeNCount } from './fse.js';
 import { LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG } from './predefined.js';
 
 describe('FSE', () => {
@@ -39,5 +39,15 @@ describe('FSE', () => {
     const symbol = decodeFSESymbol(table, LITERALS_LENGTH_TABLE_LOG, reader, state);
     expect(typeof symbol).toBe('number');
     expect(state.value).toBeGreaterThanOrEqual(0);
+  });
+
+  it('writeNCount round-trips via readNCount', () => {
+    const counts = [90, 10, 2, 1];
+    const { normalizedCounter, maxSymbolValue } = normalizeCountsForTable(counts, 6);
+    const encoded = writeNCount(normalizedCounter, maxSymbolValue, 6);
+    const decoded = readNCount(encoded, 0, maxSymbolValue, 9);
+    expect(decoded.tableLog).toBe(6);
+    expect(decoded.maxSymbolValue).toBe(maxSymbolValue);
+    expect(decoded.normalizedCounter.slice(0, maxSymbolValue + 1)).toEqual(normalizedCounter.slice(0, maxSymbolValue + 1));
   });
 });

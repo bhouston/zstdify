@@ -1,6 +1,6 @@
 import { BitWriter } from '../bitstream/bitWriter.js';
 import type { Sequence } from '../decode/reconstruct.js';
-import { buildFSEDecodeTable, type FSEDecodeRow } from '../entropy/fse.js';
+import { buildFSEDecodeTable, normalizeCountsForTable, type FSEDecodeRow, writeNCount } from '../entropy/fse.js';
 import { buildHuffmanDecodeTable, weightsToNumBits } from '../entropy/huffman.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
@@ -63,6 +63,19 @@ interface PrecomputedPathTable {
   baselineByState: Int32Array;
   minNextByState: Int32Array;
   maxNextByState: Int32Array;
+}
+
+interface SequenceTablesState {
+  llTable: readonly FSEDecodeRow[];
+  llTableLog: number;
+  ofTable: readonly FSEDecodeRow[];
+  ofTableLog: number;
+  mlTable: readonly FSEDecodeRow[];
+  mlTableLog: number;
+}
+
+export interface SequenceEntropyContext {
+  prevTables: SequenceTablesState | null;
 }
 
 function rangeMask(startBit: number, endBit: number): number {
@@ -536,12 +549,101 @@ function buildStatePath(
   return { states, updateBits };
 }
 
-function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Array | null {
+interface SymbolizedSequences {
+  llCodes: Uint8Array;
+  llExtraN: Uint8Array;
+  llExtraValue: Uint32Array;
+  mlCodes: Uint8Array;
+  mlExtraN: Uint8Array;
+  mlExtraValue: Uint32Array;
+  ofCodes: Uint8Array;
+  ofExtraN: Uint8Array;
+  ofExtraValue: Uint32Array;
+}
+
+interface StreamChoice {
+  mode: 0 | 2 | 3;
+  table: readonly FSEDecodeRow[];
+  tableLog: number;
+  path: { states: number[]; updateBits: number[] };
+  tableHeader: Uint8Array;
+}
+
+function symbolRange(codes: ArrayLike<number>): number {
+  let max = 0;
+  for (let i = 0; i < codes.length; i++) {
+    const value = codes[i] ?? 0;
+    if (value > max) max = value;
+  }
+  return max + 1;
+}
+
+function buildHistogram(codes: ArrayLike<number>, alphabetSize: number): Uint32Array {
+  const out = new Uint32Array(alphabetSize);
+  for (let i = 0; i < codes.length; i++) {
+    const c = codes[i] ?? 0;
+    if (c < 0 || c >= alphabetSize) continue;
+    out[c] = (out[c] ?? 0) + 1;
+  }
+  return out;
+}
+
+function scorePath(path: { states: number[] }, table: readonly FSEDecodeRow[], tableLog: number): number {
+  if (path.states.length === 0) return 0;
+  let bits = tableLog;
+  for (let i = 0; i < path.states.length - 1; i++) {
+    const row = table[path.states[i] ?? 0];
+    if (!row) return Number.POSITIVE_INFINITY;
+    bits += row.numBits;
+  }
+  return bits;
+}
+
+const normalizedTableCache = new Map<string, { table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }>();
+
+function getNormalizedTableCandidates(
+  codes: ArrayLike<number>,
+  maxTableLog: number,
+): Array<{ table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }> {
+  const alphabetSize = symbolRange(codes);
+  if (alphabetSize <= 0) return [];
+  const histogram = buildHistogram(codes, alphabetSize);
+  let distinct = 0;
+  for (let i = 0; i < histogram.length; i++) {
+    if ((histogram[i] ?? 0) > 0) distinct++;
+  }
+  if (distinct <= 1) return [];
+  let minTableLog = 5;
+  while ((1 << minTableLog) < distinct && minTableLog < maxTableLog) minTableLog++;
+  if ((1 << minTableLog) < distinct) return [];
+  const maxLogFromSamples = codes.length > 1 ? 31 - Math.clz32(codes.length - 1) : 5;
+  const limit = Math.max(minTableLog, Math.min(maxTableLog, maxLogFromSamples + 1));
+  const results: Array<{ table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }> = [];
+  const histogramKey = Array.from(histogram).join(',');
+  for (let tableLog = minTableLog; tableLog <= limit; tableLog++) {
+    const key = `${tableLog}:${histogramKey}`;
+    const cached = normalizedTableCache.get(key);
+    if (cached) {
+      results.push(cached);
+      continue;
+    }
+    try {
+      const { normalizedCounter, maxSymbolValue } = normalizeCountsForTable(Array.from(histogram), tableLog);
+      const header = writeNCount(normalizedCounter, maxSymbolValue, tableLog);
+      const table = buildFSEDecodeTable(normalizedCounter, tableLog);
+      const out = { table, tableLog, header };
+      normalizedTableCache.set(key, out);
+      results.push(out);
+    } catch {
+      // Skip invalid normalizations for this table log.
+    }
+  }
+  return results;
+}
+
+function symbolizedSequences(sequences: readonly Sequence[]): SymbolizedSequences | null {
   if (sequences.length === 0) return null;
   const numSequences = sequences.length;
-  const numSequencesBytes = encodeNumSequences(numSequences);
-  if (!numSequencesBytes) return null;
-
   const llCodes = new Uint8Array(numSequences);
   const llExtraN = new Uint8Array(numSequences);
   const llExtraValue = new Uint32Array(numSequences);
@@ -573,57 +675,161 @@ function buildPredefinedSequenceSection(sequences: readonly Sequence[]): Uint8Ar
     ofExtraN[i] = ofCode;
     ofExtraValue[i] = ofEx;
   }
+  return { llCodes, llExtraN, llExtraValue, mlCodes, mlExtraN, mlExtraValue, ofCodes, ofExtraN, ofExtraValue };
+}
 
+function chooseStreamMode(
+  codes: ArrayLike<number>,
+  predefinedTable: readonly FSEDecodeRow[],
+  predefinedTableLog: number,
+  maxTableLog: number,
+  prevTable: readonly FSEDecodeRow[] | null,
+  prevTableLog: number | null,
+): StreamChoice | null {
+  const predefinedPath = buildStatePath(codes, predefinedTable);
+  if (!predefinedPath) return null;
+  let best: StreamChoice = {
+    mode: 0,
+    table: predefinedTable,
+    tableLog: predefinedTableLog,
+    path: predefinedPath,
+    tableHeader: new Uint8Array(0),
+  };
+  let bestScore = scorePath(predefinedPath, predefinedTable, predefinedTableLog);
+
+  if (prevTable && prevTableLog !== null) {
+    const repeatPath = buildStatePath(codes, prevTable);
+    if (repeatPath) {
+      const repeatScore = scorePath(repeatPath, prevTable, prevTableLog);
+      if (repeatScore < bestScore) {
+        best = { mode: 3, table: prevTable, tableLog: prevTableLog, path: repeatPath, tableHeader: new Uint8Array(0) };
+        bestScore = repeatScore;
+      }
+    }
+  }
+
+  const compressedCandidates = getNormalizedTableCandidates(codes, maxTableLog);
+  for (const compressed of compressedCandidates) {
+    const compressedPath = buildStatePath(codes, compressed.table);
+    if (compressedPath) {
+      const compressedScore = scorePath(compressedPath, compressed.table, compressed.tableLog) + compressed.header.length * 8;
+      if (compressedScore < bestScore) {
+        best = {
+          mode: 2,
+          table: compressed.table,
+          tableLog: compressed.tableLog,
+          path: compressedPath,
+          tableHeader: compressed.header,
+        };
+        bestScore = compressedScore;
+      }
+    }
+  }
+  return best;
+}
+
+function buildSequenceSection(
+  sequences: readonly Sequence[],
+  context?: SequenceEntropyContext,
+): { section: Uint8Array; tables: SequenceTablesState } | null {
+  const encoded = symbolizedSequences(sequences);
+  if (!encoded) return null;
+  const numSequences = sequences.length;
+  const numSequencesBytes = encodeNumSequences(numSequences);
+  if (!numSequencesBytes) return null;
   const { ll: llTable, of: ofTable, ml: mlTable } = getPredefinedFSETables();
-
-  const llPath = buildStatePath(llCodes, llTable);
-  const ofPath = buildStatePath(ofCodes, ofTable);
-  const mlPath = buildStatePath(mlCodes, mlTable);
-  if (!llPath || !ofPath || !mlPath) return null;
+  const llChoice = chooseStreamMode(
+    encoded.llCodes,
+    llTable,
+    LITERALS_LENGTH_TABLE_LOG,
+    9,
+    context?.prevTables?.llTable ?? null,
+    context?.prevTables?.llTableLog ?? null,
+  );
+  const ofChoice = chooseStreamMode(
+    encoded.ofCodes,
+    ofTable,
+    OFFSET_CODE_TABLE_LOG,
+    8,
+    context?.prevTables?.ofTable ?? null,
+    context?.prevTables?.ofTableLog ?? null,
+  );
+  const mlChoice = chooseStreamMode(
+    encoded.mlCodes,
+    mlTable,
+    MATCH_LENGTH_TABLE_LOG,
+    9,
+    context?.prevTables?.mlTable ?? null,
+    context?.prevTables?.mlTableLog ?? null,
+  );
+  if (!llChoice || !ofChoice || !mlChoice) return null;
 
   const chunkCount = numSequences * 6;
   const readCounts = new Uint8Array(chunkCount);
   const readValues = new Uint32Array(chunkCount);
   let readPos = 0;
-  readCounts[readPos] = LITERALS_LENGTH_TABLE_LOG;
-  readValues[readPos++] = llPath.states[0] ?? 0;
-  readCounts[readPos] = OFFSET_CODE_TABLE_LOG;
-  readValues[readPos++] = ofPath.states[0] ?? 0;
-  readCounts[readPos] = MATCH_LENGTH_TABLE_LOG;
-  readValues[readPos++] = mlPath.states[0] ?? 0;
+  readCounts[readPos] = llChoice.tableLog;
+  readValues[readPos++] = llChoice.path.states[0] ?? 0;
+  readCounts[readPos] = ofChoice.tableLog;
+  readValues[readPos++] = ofChoice.path.states[0] ?? 0;
+  readCounts[readPos] = mlChoice.tableLog;
+  readValues[readPos++] = mlChoice.path.states[0] ?? 0;
   for (let i = 0; i < numSequences; i++) {
-    readCounts[readPos] = ofExtraN[i] ?? 0;
-    readValues[readPos++] = ofExtraValue[i] ?? 0;
-    readCounts[readPos] = mlExtraN[i] ?? 0;
-    readValues[readPos++] = mlExtraValue[i] ?? 0;
-    readCounts[readPos] = llExtraN[i] ?? 0;
-    readValues[readPos++] = llExtraValue[i] ?? 0;
+    readCounts[readPos] = encoded.ofExtraN[i] ?? 0;
+    readValues[readPos++] = encoded.ofExtraValue[i] ?? 0;
+    readCounts[readPos] = encoded.mlExtraN[i] ?? 0;
+    readValues[readPos++] = encoded.mlExtraValue[i] ?? 0;
+    readCounts[readPos] = encoded.llExtraN[i] ?? 0;
+    readValues[readPos++] = encoded.llExtraValue[i] ?? 0;
     if (i !== numSequences - 1) {
-      const llState = llPath.states[i] ?? 0;
-      const mlState = mlPath.states[i] ?? 0;
-      const ofState = ofPath.states[i] ?? 0;
-      const llRow = llTable[llState];
-      const mlRow = mlTable[mlState];
-      const ofRow = ofTable[ofState];
+      const llState = llChoice.path.states[i] ?? 0;
+      const mlState = mlChoice.path.states[i] ?? 0;
+      const ofState = ofChoice.path.states[i] ?? 0;
+      const llRow = llChoice.table[llState];
+      const mlRow = mlChoice.table[mlState];
+      const ofRow = ofChoice.table[ofState];
       if (!llRow || !mlRow || !ofRow) return null;
       readCounts[readPos] = llRow.numBits;
-      readValues[readPos++] = llPath.updateBits[i] ?? 0;
+      readValues[readPos++] = llChoice.path.updateBits[i] ?? 0;
       readCounts[readPos] = mlRow.numBits;
-      readValues[readPos++] = mlPath.updateBits[i] ?? 0;
+      readValues[readPos++] = mlChoice.path.updateBits[i] ?? 0;
       readCounts[readPos] = ofRow.numBits;
-      readValues[readPos++] = ofPath.updateBits[i] ?? 0;
+      readValues[readPos++] = ofChoice.path.updateBits[i] ?? 0;
     }
   }
 
   const bitstream = encodeReverseBitstream(readCounts, readValues);
-  const out = new Uint8Array(numSequencesBytes.length + 1 + bitstream.length);
+  const tableHeaderSize = llChoice.tableHeader.length + ofChoice.tableHeader.length + mlChoice.tableHeader.length;
+  const out = new Uint8Array(numSequencesBytes.length + 1 + tableHeaderSize + bitstream.length);
   out.set(numSequencesBytes, 0);
-  out[numSequencesBytes.length] = 0x00; // predefined LL/OF/ML modes
-  out.set(bitstream, numSequencesBytes.length + 1);
-  return out;
+  const modeByte = (llChoice.mode << 6) | (ofChoice.mode << 4) | (mlChoice.mode << 2);
+  out[numSequencesBytes.length] = modeByte & 0xff;
+  let pos = numSequencesBytes.length + 1;
+  out.set(llChoice.tableHeader, pos);
+  pos += llChoice.tableHeader.length;
+  out.set(ofChoice.tableHeader, pos);
+  pos += ofChoice.tableHeader.length;
+  out.set(mlChoice.tableHeader, pos);
+  pos += mlChoice.tableHeader.length;
+  out.set(bitstream, pos);
+  return {
+    section: out,
+    tables: {
+      llTable: llChoice.table,
+      llTableLog: llChoice.tableLog,
+      ofTable: ofChoice.table,
+      ofTableLog: ofChoice.tableLog,
+      mlTable: mlChoice.table,
+      mlTableLog: mlChoice.tableLog,
+    },
+  };
 }
 
-export function buildCompressedBlockPayload(literals: Uint8Array, sequences: Sequence[]): Uint8Array | null {
+export function buildCompressedBlockPayload(
+  literals: Uint8Array,
+  sequences: Sequence[],
+  context?: SequenceEntropyContext,
+): Uint8Array | null {
   const literalsLength = literals.length;
   const rawSection = buildRawLiteralsSection(literals);
   if (!rawSection) return null;
@@ -642,11 +848,14 @@ export function buildCompressedBlockPayload(literals: Uint8Array, sequences: Seq
       literalsSection = general;
     }
   }
-  const seqSection = buildPredefinedSequenceSection(sequences);
+  const seqSection = buildSequenceSection(sequences, context);
   if (!seqSection) return null;
-  const out = new Uint8Array(literalsSection.length + seqSection.length);
+  const out = new Uint8Array(literalsSection.length + seqSection.section.length);
   out.set(literalsSection, 0);
-  out.set(seqSection, literalsSection.length);
+  out.set(seqSection.section, literalsSection.length);
+  if (context) {
+    context.prevTables = seqSection.tables;
+  }
   return out;
 }
 
@@ -665,5 +874,5 @@ export const __benchInternals = {
   encodeReverseBitstream,
   buildRawLiteralsSection,
   buildGeneralCompressedLiterals,
-  buildPredefinedSequenceSection,
+  buildSequenceSection,
 };

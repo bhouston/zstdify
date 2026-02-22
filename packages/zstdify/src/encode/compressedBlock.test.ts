@@ -3,8 +3,15 @@ import { compress } from '../compress.js';
 import { parseLiteralsSectionHeader } from '../decode/literals.js';
 import { decompress } from '../decompress.js';
 import { parseFrameHeader } from '../frame/frameHeader.js';
-import { buildCompressedBlockPayload, writeCompressedBlock } from './compressedBlock.js';
+import { buildCompressedBlockPayload, type SequenceEntropyContext, writeCompressedBlock } from './compressedBlock.js';
 import { buildGreedySequences } from './greedySequences.js';
+
+function sequenceModesOffset(payload: Uint8Array, literalsSectionEnd: number): number {
+  const first = payload[literalsSectionEnd] ?? 0;
+  if (first < 128) return literalsSectionEnd + 1;
+  if (first === 255) return literalsSectionEnd + 3;
+  return literalsSectionEnd + 2;
+}
 
 describe('compressed block encoder', () => {
   it('builds decodable compressed-block payload for single-sequence case', () => {
@@ -41,8 +48,8 @@ describe('compressed block encoder', () => {
     const litBytes = header.headerSize + (header.compressedSize ?? header.regeneratedSize);
     const numSeq = payload![litBytes] ?? 0;
     expect(numSeq).toBe(plan.sequences.length);
-    const modes = payload![litBytes + 1] ?? 0xff;
-    expect(modes).toBe(0); // predefined, i.e. non-RLE modes
+    const modes = payload![sequenceModesOffset(payload!, litBytes)] ?? 0xff;
+    expect((modes & 0x03) === 0).toBe(true); // reserved bits must stay zero
     const frameHeader = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x20, input.length & 0xff]);
     const block = writeCompressedBlock(payload!, true);
     const frame = new Uint8Array(frameHeader.length + block.length);
@@ -62,5 +69,39 @@ describe('compressed block encoder', () => {
     expect(payload).not.toBeNull();
     const { header } = parseLiteralsSectionHeader(payload!, 0);
     expect([0, 2]).toContain(header.blockType);
+  });
+
+  it('reuses previous sequence tables with repeat mode when profitable', () => {
+    const literals = new Uint8Array(64);
+    const sequences = new Array(40).fill(0).map((_, i) => ({
+      literalsLength: i % 5 === 0 ? 3 : 0,
+      offset: i % 6 === 0 ? 32 : 1,
+      matchLength: i % 4 === 0 ? 8 : 3,
+    }));
+    const context: SequenceEntropyContext = { prevTables: null };
+    const first = buildCompressedBlockPayload(literals, sequences, context);
+    expect(first).not.toBeNull();
+    const second = buildCompressedBlockPayload(literals, sequences, context);
+    expect(second).not.toBeNull();
+    const { header } = parseLiteralsSectionHeader(second!, 0);
+    const litBytes = header.headerSize + (header.compressedSize ?? header.regeneratedSize);
+    const modes = second![sequenceModesOffset(second!, litBytes)] ?? 0;
+    expect(((modes >> 6) & 0x3) === 3 || ((modes >> 4) & 0x3) === 3 || ((modes >> 2) & 0x3) === 3).toBe(true);
+  });
+
+  it('evaluates adaptive sequence table modes for skewed distributions', () => {
+    const literals = new Uint8Array(512);
+    const sequences = new Array(220).fill(0).map((_, i) => ({
+      literalsLength: i % 31 === 0 ? 18 : 0,
+      offset: i % 37 === 0 ? 64 : 1,
+      matchLength: i % 29 === 0 ? 12 : 3,
+    }));
+    const payload = buildCompressedBlockPayload(literals, sequences);
+    expect(payload).not.toBeNull();
+    const { header } = parseLiteralsSectionHeader(payload!, 0);
+    const litBytes = header.headerSize + (header.compressedSize ?? header.regeneratedSize);
+    const modes = payload![sequenceModesOffset(payload!, litBytes)] ?? 0;
+    expect((modes & 0x03) === 0).toBe(true);
+    expect(((modes >> 6) & 0x3) !== 1 && ((modes >> 4) & 0x3) !== 1 && ((modes >> 2) & 0x3) !== 1).toBe(true);
   });
 });

@@ -5,7 +5,7 @@
 
 import { resolveDictionaryIdForCompression } from './dictionary/compressorDictionary.js';
 import { writeRawBlock, writeRLEBlock } from './encode/blockWriter.js';
-import { buildCompressedBlockPayload, writeCompressedBlock } from './encode/compressedBlock.js';
+import { buildCompressedBlockPayload, type SequenceEntropyContext, writeCompressedBlock } from './encode/compressedBlock.js';
 import { writeFrameHeader } from './encode/frameWriter.js';
 import { buildGreedySequences } from './encode/greedySequences.js';
 import { ZstdError } from './errors.js';
@@ -76,6 +76,7 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   let blockIndex = 0;
   let history: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
   let repOffsets: [number, number, number] = [1, 4, 8];
+  const sequenceEntropyContext: SequenceEntropyContext = { prevTables: null };
   while (offset < input.length || blockIndex < blockCount) {
     const size = Math.min(BLOCK_MAX, input.length - offset);
     const last = blockIndex === blockCount - 1;
@@ -84,12 +85,13 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
       if (strategy) {
         const plan = buildGreedySequences(block, { strategy, history, repOffsets });
         if (plan.sequences.length > 0) {
-          const payload = buildCompressedBlockPayload(plan.literals, plan.sequences);
+          const payload = buildCompressedBlockPayload(plan.literals, plan.sequences, sequenceEntropyContext);
           if (payload) {
             const compressed = writeCompressedBlock(payload, last);
             if (compressed.length < 3 + size) {
               chunks.push(compressed);
               repOffsets = plan.finalRepOffsets;
+              history = appendHistory(history, block);
               offset += size;
               blockIndex++;
               continue;
