@@ -208,7 +208,7 @@ pnpm make-release:cli
 ## Acknowledgements
 
 This project is made possible by the original [zstd](https://github.com/facebook/zstd) project by Meta and its contributors.
-The monorepo, project, and CLI structure were bootstrapped from [hdrify](https://github.com/bhouston/hdrify), which made this project much easier to build.
+The monorepo, project, and CLI structure were bootstrapped from [hdrify](https://github.com/bhouston/hdrify), which made this project much easier to build.  Many JavaScript optimization strategies were inspired by [fzstd](https://github.com/101arrowz/fzstd).
 
 # License
 
