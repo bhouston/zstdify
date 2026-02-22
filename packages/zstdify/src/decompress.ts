@@ -2,8 +2,8 @@
  * Decompress zstd-compressed data.
  */
 
-import { decompressFrame } from './decode/decompressFrame.js';
 import type { DecodeTrace } from './decode/debugTrace.js';
+import { decompressFrame } from './decode/decompressFrame.js';
 import type { DecoderReuseBag } from './decode/reconstruct.js';
 import { normalizeDecoderDictionary } from './dictionary/decoderDictionary.js';
 import { ZstdError } from './errors.js';

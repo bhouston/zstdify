@@ -51,8 +51,7 @@ export function loadBenchCorpus(): BenchPayload[] {
     const absolutePath = path.resolve(BENCH_DATA_DIR, file.localPath);
     if (!fs.existsSync(absolutePath)) {
       throw new Error(
-        `Benchmark corpus file is missing: ${absolutePath}. ` +
-          'Run: pnpm --filter zstdify-tests run bench:fetch-data',
+        `Benchmark corpus file is missing: ${absolutePath}. ` + 'Run: pnpm --filter zstdify-tests run bench:fetch-data',
       );
     }
     const bytes = fs.readFileSync(absolutePath);

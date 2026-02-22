@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import * as http from 'node:http';
 import * as https from 'node:https';
-import { spawn } from 'node:child_process';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BENCH_DATA_DIR = path.join(__dirname, '..', 'bench-data');
@@ -57,36 +57,32 @@ function downloadFile(urlString: string, destinationPath: string, redirects = 0)
         },
       },
       (response) => {
-      const statusCode = response.statusCode ?? 0;
-      const location = response.headers.location;
-      if (
-        [301, 302, 303, 307, 308].includes(statusCode) &&
-        typeof location === 'string' &&
-        location.length > 0
-      ) {
-        response.resume();
-        const nextUrl = new URL(location, urlString).toString();
-        void downloadFile(nextUrl, destinationPath, redirects + 1).then(resolve, reject);
-        return;
-      }
+        const statusCode = response.statusCode ?? 0;
+        const location = response.headers.location;
+        if ([301, 302, 303, 307, 308].includes(statusCode) && typeof location === 'string' && location.length > 0) {
+          response.resume();
+          const nextUrl = new URL(location, urlString).toString();
+          void downloadFile(nextUrl, destinationPath, redirects + 1).then(resolve, reject);
+          return;
+        }
 
-      if (statusCode < 200 || statusCode >= 300) {
-        response.resume();
-        reject(new Error(`Download failed for ${urlString}: HTTP ${statusCode}`));
-        return;
-      }
+        if (statusCode < 200 || statusCode >= 300) {
+          response.resume();
+          reject(new Error(`Download failed for ${urlString}: HTTP ${statusCode}`));
+          return;
+        }
 
-      const out = fs.createWriteStream(destinationPath);
-      response.pipe(out);
+        const out = fs.createWriteStream(destinationPath);
+        response.pipe(out);
 
-      out.on('finish', () => {
-        out.close();
-        resolve();
-      });
+        out.on('finish', () => {
+          out.close();
+          resolve();
+        });
 
-      out.on('error', (err) => {
-        reject(err);
-      });
+        out.on('error', (err) => {
+          reject(err);
+        });
       },
     );
 

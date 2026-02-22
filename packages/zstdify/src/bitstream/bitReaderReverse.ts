@@ -13,11 +13,7 @@ for (let i = 0; i <= 32; i++) {
 
 function readU32LEBounded(data: Uint8Array, idx: number): number {
   return (
-    ((data[idx] ?? 0) |
-      ((data[idx + 1] ?? 0) << 8) |
-      ((data[idx + 2] ?? 0) << 16) |
-      ((data[idx + 3] ?? 0) << 24)) >>>
-    0
+    ((data[idx] ?? 0) | ((data[idx + 1] ?? 0) << 8) | ((data[idx + 2] ?? 0) << 16) | ((data[idx + 3] ?? 0) << 24)) >>> 0
   );
 }
 
@@ -52,11 +48,11 @@ export class BitReaderReverse {
       const bitInByte = requestedStart & 7;
       const hasEightBytes = byteIndex + 7 < this.data.length;
       const word0 = hasEightBytes
-        ? ((this.data[byteIndex]! |
+        ? (this.data[byteIndex]! |
             (this.data[byteIndex + 1]! << 8) |
             (this.data[byteIndex + 2]! << 16) |
             (this.data[byteIndex + 3]! << 24)) >>>
-          0)
+          0
         : readU32LEBounded(this.data, byteIndex);
       if (bitInByte + n <= 32) {
         const value = word0 >>> bitInByte;
@@ -66,11 +62,11 @@ export class BitReaderReverse {
       const low = word0 >>> bitInByte;
       const highBits = n - (32 - bitInByte);
       const word1 = hasEightBytes
-        ? ((this.data[byteIndex + 4]! |
+        ? (this.data[byteIndex + 4]! |
             (this.data[byteIndex + 5]! << 8) |
             (this.data[byteIndex + 6]! << 16) |
             (this.data[byteIndex + 7]! << 24)) >>>
-          0)
+          0
         : readU32LEBounded(this.data, byteIndex + 4);
       const high = ((word1 & BIT_MASKS[highBits]!) << (32 - bitInByte)) >>> 0;
       const merged = (low | high) >>> 0;

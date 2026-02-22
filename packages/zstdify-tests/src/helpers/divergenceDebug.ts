@@ -135,11 +135,12 @@ const ZERO_BYTE = 0;
 
 function readU32LE(data: Uint8Array, offset: number): number {
   return (
-    (data[offset] ?? 0) |
-    ((data[offset + 1] ?? 0) << 8) |
-    ((data[offset + 2] ?? 0) << 16) |
-    ((data[offset + 3] ?? 0) << 24)
-  ) >>> 0;
+    ((data[offset] ?? 0) |
+      ((data[offset + 1] ?? 0) << 8) |
+      ((data[offset + 2] ?? 0) << 16) |
+      ((data[offset + 3] ?? 0) << 24)) >>>
+    0
+  );
 }
 
 function readByte(data: Uint8Array, offset: number): number {
@@ -161,12 +162,23 @@ function parseFrameHeaderSize(data: Uint8Array): number {
   const didFieldSize = [0, 1, 2, 4][dictionaryIdFlag] ?? 0;
   offset += didFieldSize;
   const fcsFieldSize =
-    frameContentSizeFlag === 0 ? (singleSegment ? 1 : 0) : frameContentSizeFlag === 1 ? 2 : frameContentSizeFlag === 2 ? 4 : 8;
+    frameContentSizeFlag === 0
+      ? singleSegment
+        ? 1
+        : 0
+      : frameContentSizeFlag === 1
+        ? 2
+        : frameContentSizeFlag === 2
+          ? 4
+          : 8;
   offset += fcsFieldSize;
   return offset;
 }
 
-function parseBlockHeaderLocal(data: Uint8Array, offset: number): {
+function parseBlockHeaderLocal(
+  data: Uint8Array,
+  offset: number,
+): {
   lastBlock: boolean;
   blockType: 0 | 1 | 2 | 3;
   blockSize: number;
@@ -179,7 +191,10 @@ function parseBlockHeaderLocal(data: Uint8Array, offset: number): {
   };
 }
 
-function parseLiteralsSectionHeaderLocal(data: Uint8Array, offset: number): {
+function parseLiteralsSectionHeaderLocal(
+  data: Uint8Array,
+  offset: number,
+): {
   blockType: 0 | 1 | 2 | 3;
   sizeFormat: number;
   regeneratedSize: number;
@@ -410,12 +425,8 @@ export async function runNodeInteropDivergenceDebug(
   if (mismatch.offset < 0) return null;
   const chunkStart = mismatch.chunkIndex * CHUNK_SIZE;
   const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, Math.min(passDecoded.length, failDecoded.length));
-  const expectedChunkHash = createHash('sha256')
-    .update(passDecoded.subarray(chunkStart, chunkEnd))
-    .digest('hex');
-  const actualChunkHash = createHash('sha256')
-    .update(failDecoded.subarray(chunkStart, chunkEnd))
-    .digest('hex');
+  const expectedChunkHash = createHash('sha256').update(passDecoded.subarray(chunkStart, chunkEnd)).digest('hex');
+  const actualChunkHash = createHash('sha256').update(failDecoded.subarray(chunkStart, chunkEnd)).digest('hex');
   const passBlockAtMismatch = findTraceBlockAtOffset(passTraceBlocks, mismatch.offset);
   const failBlockAtMismatch = findTraceBlockAtOffset(failTraceBlocks, mismatch.offset);
   return {
@@ -465,15 +476,11 @@ export function formatInteropDivergenceReport(report: InteropDivergenceReport): 
   const passCenter = report.passBlockAtMismatch?.blockIndex ?? -1;
   const parts: string[] = [];
   parts.push(`[interop-debug] ${report.payloadId} level ${report.passLevel} -> ${report.failLevel}`);
-  parts.push(
-    `[interop-debug] compressed bytes pass=${report.passCompressedBytes} fail=${report.failCompressedBytes}`,
-  );
+  parts.push(`[interop-debug] compressed bytes pass=${report.passCompressedBytes} fail=${report.failCompressedBytes}`);
   parts.push(
     `[interop-debug] mismatch offset=${report.mismatchOffset} chunk=${report.mismatchChunkIndex} passLen=${report.expectedOutputLength} failLen=${report.failOutputLength}`,
   );
-  parts.push(
-    `[interop-debug] chunk sha256 pass=${report.expectedChunkHash} fail=${report.actualChunkHash}`,
-  );
+  parts.push(`[interop-debug] chunk sha256 pass=${report.expectedChunkHash} fail=${report.actualChunkHash}`);
   parts.push(`[interop-debug] context pass=${report.expectedContextHex}`);
   parts.push(`[interop-debug] context fail=${report.actualContextHex}`);
   parts.push(`[interop-debug] pass block @ mismatch: ${formatBlockSummary(report.passBlockAtMismatch)}`);

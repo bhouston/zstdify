@@ -5,7 +5,11 @@
 
 import { resolveDictionaryIdForCompression } from './dictionary/compressorDictionary.js';
 import { writeRawBlock, writeRLEBlock } from './encode/blockWriter.js';
-import { buildCompressedBlockPayload, type SequenceEntropyContext, writeCompressedBlock } from './encode/compressedBlock.js';
+import {
+  buildCompressedBlockPayload,
+  type SequenceEntropyContext,
+  writeCompressedBlock,
+} from './encode/compressedBlock.js';
 import { writeFrameHeader } from './encode/frameWriter.js';
 import { buildGreedySequences } from './encode/greedySequences.js';
 import { ZstdError } from './errors.js';

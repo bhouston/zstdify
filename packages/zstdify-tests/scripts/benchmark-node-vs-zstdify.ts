@@ -9,6 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
+import { decompress as fzstdDecompress } from 'fzstd';
 import { Bench } from 'tinybench';
 import { ZSTDDecoder } from 'zstddec';
 import { compress, decompress } from 'zstdify';
@@ -35,6 +36,7 @@ interface ResultRow {
   compressNodeMs: number;
   decompressZstdifyMs: number;
   decompressNodeMs: number;
+  decompressFzstdMs: number;
   decompressZstddecMs: number;
   ratioZstdify: number;
   ratioNode: number;
@@ -52,7 +54,9 @@ async function main(): Promise<void> {
   await decoder.init();
   console.log('Loading benchmark corpus...');
   const payloads = loadBenchCorpus();
-  console.log(`Loaded ${payloads.length} payloads. Running benchmarks (${payloads.length} × ${LEVELS.length} = ${payloads.length * LEVELS.length} runs)...`);
+  console.log(
+    `Loaded ${payloads.length} payloads. Running benchmarks (${payloads.length} × ${LEVELS.length} = ${payloads.length * LEVELS.length} runs)...`,
+  );
 
   if (!fs.existsSync(BENCH_DIR)) {
     fs.mkdirSync(BENCH_DIR, { recursive: true });
@@ -66,7 +70,9 @@ async function main(): Promise<void> {
     const payloadBytes = data.length;
     for (const level of LEVELS) {
       runIndex += 1;
-      console.log(`  [${runIndex}/${totalRuns}] ${payloadId} level ${level} (${(payloadBytes / 1024 / 1024).toFixed(2)} MiB)...`);
+      console.log(
+        `  [${runIndex}/${totalRuns}] ${payloadId} level ${level} (${(payloadBytes / 1024 / 1024).toFixed(2)} MiB)...`,
+      );
       const zstdifyCompressed = compress(data, { level });
       const nodeCompressed = nodeCompress(data, level);
       const zstdifyDecompressInput = zstdifyCompressed;
@@ -91,6 +97,9 @@ async function main(): Promise<void> {
       bench.add('decompress node', () => {
         zlib.zstdDecompressSync(nodeDecompressInput);
       });
+      bench.add('decompress fzstd', () => {
+        fzstdDecompress(nodeDecompressInput);
+      });
       bench.add('decompress zstddec', () => {
         decoder.decode(zstdifyDecompressInput, payloadBytes);
       });
@@ -109,6 +118,7 @@ async function main(): Promise<void> {
       const compressNodeMs = getMedianMs('compress node');
       const decompressZstdifyMs = getMedianMs('decompress zstdify');
       const decompressNodeMs = getMedianMs('decompress node');
+      const decompressFzstdMs = getMedianMs('decompress fzstd');
       const decompressZstddecMs = getMedianMs('decompress zstddec');
 
       rows.push({
@@ -120,6 +130,7 @@ async function main(): Promise<void> {
         compressNodeMs,
         decompressZstdifyMs,
         decompressNodeMs,
+        decompressFzstdMs,
         decompressZstddecMs,
         ratioZstdify: payloadBytes > 0 ? zstdifyCompressed.length / payloadBytes : 0,
         ratioNode: payloadBytes > 0 ? nodeCompressed.length / payloadBytes : 0,
@@ -141,6 +152,7 @@ async function main(): Promise<void> {
       compressNodeMbps: mbps(r.payloadBytes, r.compressNodeMs),
       decompressZstdifyMbps: mbps(r.payloadBytes, r.decompressZstdifyMs),
       decompressNodeMbps: mbps(r.payloadBytes, r.decompressNodeMs),
+      decompressFzstdMbps: mbps(r.payloadBytes, r.decompressFzstdMs),
       decompressZstddecMbps: mbps(r.payloadBytes, r.decompressZstddecMs),
       ratioZstdify: r.ratioZstdify,
       ratioNode: r.ratioNode,
@@ -158,11 +170,11 @@ async function main(): Promise<void> {
     '',
     '## Throughput (MB/s)',
     '',
-    '| Payload     | Level | Compress zstdify | Compress Node | Decompress zstdify | Decompress Node | Decompress zstddec |',
-    '|-------------|----------|-------|------------------|---------------|-------------------|-----------------|---------------------|',
+    '| Payload     | Level | Compress zstdify | Compress Node | Decompress zstdify | Decompress Node | Decompress fzstd | Decompress zstddec |',
+    '|-------------|----------|-------|------------------|---------------|-------------------|------------------|---------------------|',
     ...summary.throughput.map(
       (t) =>
-        `| ${t.payloadId.padEnd(11)} | ${t.payloadCategory.padEnd(8)} | ${t.level} | ${t.compressZstdifyMbps.toFixed(2)} | ${t.compressNodeMbps.toFixed(2)} | ${t.decompressZstdifyMbps.toFixed(2)} | ${t.decompressNodeMbps.toFixed(2)} | ${t.decompressZstddecMbps.toFixed(2)} |`,
+        `| ${t.payloadId.padEnd(11)} | ${t.payloadCategory.padEnd(8)} | ${t.level} | ${t.compressZstdifyMbps.toFixed(2)} | ${t.compressNodeMbps.toFixed(2)} | ${t.decompressZstdifyMbps.toFixed(2)} | ${t.decompressNodeMbps.toFixed(2)} | ${t.decompressFzstdMbps.toFixed(2)} | ${t.decompressZstddecMbps.toFixed(2)} |`,
     ),
     '',
     '## Compression ratio (compressed/original)',

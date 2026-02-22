@@ -2,10 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  formatInteropDivergenceReport,
-  runNodeInteropDivergenceDebug,
-} from '../src/helpers/divergenceDebug.ts';
+import { formatInteropDivergenceReport, runNodeInteropDivergenceDebug } from '../src/helpers/divergenceDebug.ts';
 import { loadLocalBenchCorpusForTests } from '../src/helpers/localBenchCorpus.ts';
 
 interface CliOptions {

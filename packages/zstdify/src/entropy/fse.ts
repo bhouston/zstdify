@@ -330,7 +330,11 @@ export function normalizeCountsForTable(
   return { normalizedCounter, maxSymbolValue };
 }
 
-export function writeNCount(normalizedCounter: readonly number[], maxSymbolValue: number, tableLog: number): Uint8Array {
+export function writeNCount(
+  normalizedCounter: readonly number[],
+  maxSymbolValue: number,
+  tableLog: number,
+): Uint8Array {
   if (tableLog < FSE_MIN_TABLELOG) {
     throw new ZstdError('FSE writeNCount: tableLog too small', 'parameter_unsupported');
   }
@@ -381,7 +385,7 @@ export function writeNCount(normalizedCounter: readonly number[], maxSymbolValue
 
     let count = normalizedCounter[symbol] ?? 0;
     symbol++;
-    const max = (2 * threshold - 1) - remaining;
+    const max = 2 * threshold - 1 - remaining;
     remaining -= count < 0 ? -count : count;
     count += 1;
     if (count >= threshold) count += max;

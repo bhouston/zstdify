@@ -26,9 +26,7 @@ export interface BenchCorpusPayload {
   sourceBytes: number;
 }
 
-export function loadLocalBenchCorpusForTests(
-  maxSampleBytes = DEFAULT_TEST_SAMPLE_BYTES,
-): BenchCorpusPayload[] {
+export function loadLocalBenchCorpusForTests(maxSampleBytes = DEFAULT_TEST_SAMPLE_BYTES): BenchCorpusPayload[] {
   if (!fs.existsSync(BENCH_DATA_INDEX_PATH)) {
     throw new Error(
       `Missing local benchmark corpus index at ${BENCH_DATA_INDEX_PATH}. ` +

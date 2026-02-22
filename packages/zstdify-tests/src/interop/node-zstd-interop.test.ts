@@ -1,11 +1,8 @@
-import zlib from 'node:zlib';
 import { createHash } from 'node:crypto';
+import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { compress, decompress } from 'zstdify';
-import {
-  formatInteropDivergenceReport,
-  runNodeInteropDivergenceDebug,
-} from '../helpers/divergenceDebug.js';
+import { formatInteropDivergenceReport, runNodeInteropDivergenceDebug } from '../helpers/divergenceDebug.js';
 import { loadLocalBenchCorpusForTests } from '../helpers/localBenchCorpus.js';
 import { makeBinaryPayload, makeSeededPayload } from '../helpers/payloadHelpers.js';
 

@@ -78,10 +78,7 @@ export function ensurePackedSequencesCapacity(
   return createPackedSequences(capacity);
 }
 
-export function packSequences(
-  sequences: readonly Sequence[],
-  reuse?: PackedSequences,
-): PackedSequences {
+export function packSequences(sequences: readonly Sequence[], reuse?: PackedSequences): PackedSequences {
   const packed = ensurePackedSequencesCapacity(reuse, sequences.length);
   for (let i = 0; i < sequences.length; i++) {
     const seq = sequences[i];

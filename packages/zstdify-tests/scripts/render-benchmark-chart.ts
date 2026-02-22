@@ -26,6 +26,7 @@ interface ThroughputRow {
   compressNodeMbps: number;
   decompressZstdifyMbps: number;
   decompressNodeMbps: number;
+  decompressFzstdMbps?: number;
   decompressZstddecMbps?: number;
   ratioZstdify: number;
   ratioNode: number;
@@ -76,14 +77,26 @@ function main(): void {
       { label, impl: 'zstdify', mbps: t.decompressZstdifyMbps },
       { label, impl: 'Node', mbps: t.decompressNodeMbps },
     );
+    if (t.decompressFzstdMbps !== undefined) {
+      decompressRows.push({ label, impl: 'fzstd', mbps: t.decompressFzstdMbps });
+    }
     if (t.decompressZstddecMbps !== undefined) {
       decompressRows.push({ label, impl: 'zstddec', mbps: t.decompressZstddecMbps });
     }
   }
 
   // Side-by-side grouped bars: xOffset places bars next to each other per category.
-  // Single scale range (zstdify, Node, zstddec) so vconcat does not merge conflicting scales.
-  const implColors = ['#1f77b4', '#ff7f0e', '#2ca02c'] as const; // blue, orange, green
+  // Single scale range (zstdify, Node, fzstd, zstddec) so vconcat does not merge conflicting scales.
+  const implColorByName: Record<string, string> = {
+    zstdify: '#1f77b4',
+    Node: '#ff7f0e',
+    fzstd: '#9467bd',
+    zstddec: '#2ca02c',
+  };
+  const implDomain = ['zstdify', 'Node', 'fzstd', 'zstddec'].filter(
+    (impl) => compressRows.some((r) => r.impl === impl) || decompressRows.some((r) => r.impl === impl),
+  );
+  const implColors = implDomain.map((impl) => implColorByName[impl] ?? '#7f7f7f');
   const vlSpec = {
     $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
     vconcat: [
@@ -98,7 +111,7 @@ function main(): void {
           color: {
             field: 'impl',
             type: 'nominal',
-            scale: { range: [...implColors] },
+            scale: { domain: implDomain, range: implColors },
             // biome-ignore lint/security/noSecrets: chart legend label, not a secret
             legend: { title: 'Implementation' },
           },
@@ -116,7 +129,7 @@ function main(): void {
           color: {
             field: 'impl',
             type: 'nominal',
-            scale: { range: [...implColors] },
+            scale: { domain: implDomain, range: implColors },
             // biome-ignore lint/security/noSecrets: chart legend label, not a secret
             legend: { title: 'Implementation' },
           },

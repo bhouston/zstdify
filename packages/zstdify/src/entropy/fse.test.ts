@@ -48,6 +48,8 @@ describe('FSE', () => {
     const decoded = readNCount(encoded, 0, maxSymbolValue, 9);
     expect(decoded.tableLog).toBe(6);
     expect(decoded.maxSymbolValue).toBe(maxSymbolValue);
-    expect(decoded.normalizedCounter.slice(0, maxSymbolValue + 1)).toEqual(normalizedCounter.slice(0, maxSymbolValue + 1));
+    expect(decoded.normalizedCounter.slice(0, maxSymbolValue + 1)).toEqual(
+      normalizedCounter.slice(0, maxSymbolValue + 1),
+    );
   });
 });

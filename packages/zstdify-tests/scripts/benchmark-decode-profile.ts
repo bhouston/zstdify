@@ -10,7 +10,7 @@
  */
 
 import zlib from 'node:zlib';
-import { type DecoderContext, compress, decompress } from 'zstdify';
+import { compress, type DecoderContext, decompress } from 'zstdify';
 import { loadBenchCorpus, selectProfilePayload } from './bench-corpus.ts';
 
 function parseTurns(argv: string[]): number {

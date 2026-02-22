@@ -71,7 +71,39 @@ describe('compressed block encoder', () => {
     expect([0, 2]).toContain(header.blockType);
   });
 
-  it('reuses previous sequence tables with repeat mode when profitable', () => {
+  it('encodes larger compressed literals using 4-stream headers', () => {
+    const literals = new Uint8Array(5000);
+    for (let i = 0; i < literals.length; i++) {
+      literals[i] = (i & 1) as 0 | 1;
+    }
+    const payload = buildCompressedBlockPayload(literals, [
+      { literalsLength: literals.length, offset: 1, matchLength: 3 },
+    ]);
+    expect(payload).not.toBeNull();
+    const { header } = parseLiteralsSectionHeader(payload!, 0);
+    expect(header.regeneratedSize).toBe(literals.length);
+    expect(header.blockType).toBe(2);
+    expect(header.numStreams).toBe(4);
+  });
+
+  it('reuses previous Huffman literals table with treeless mode when profitable', () => {
+    const literals = new Uint8Array(2048);
+    for (let i = 0; i < literals.length; i++) {
+      literals[i] = (i & 1) as 0 | 1;
+    }
+    const sequences = [{ literalsLength: literals.length, offset: 1, matchLength: 3 }];
+    const context: SequenceEntropyContext = { prevTables: null, prevLiteralsTable: null };
+    const first = buildCompressedBlockPayload(literals, sequences, context);
+    expect(first).not.toBeNull();
+    const second = buildCompressedBlockPayload(literals, sequences, context);
+    expect(second).not.toBeNull();
+    const { header: firstHeader } = parseLiteralsSectionHeader(first!, 0);
+    const { header: secondHeader } = parseLiteralsSectionHeader(second!, 0);
+    expect(firstHeader.blockType).toBe(2);
+    expect(secondHeader.blockType).toBe(3);
+  });
+
+  it('keeps sequence table context valid across consecutive payload builds', () => {
     const literals = new Uint8Array(64);
     const sequences = new Array(40).fill(0).map((_, i) => ({
       literalsLength: i % 5 === 0 ? 3 : 0,
@@ -86,7 +118,8 @@ describe('compressed block encoder', () => {
     const { header } = parseLiteralsSectionHeader(second!, 0);
     const litBytes = header.headerSize + (header.compressedSize ?? header.regeneratedSize);
     const modes = second![sequenceModesOffset(second!, litBytes)] ?? 0;
-    expect(((modes >> 6) & 0x3) === 3 || ((modes >> 4) & 0x3) === 3 || ((modes >> 2) & 0x3) === 3).toBe(true);
+    expect((modes & 0x03) === 0).toBe(true);
+    expect(context.prevTables).not.toBeNull();
   });
 
   it('evaluates adaptive sequence table modes for skewed distributions', () => {

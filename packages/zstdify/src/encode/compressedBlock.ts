@@ -1,7 +1,5 @@
-import { BitWriter } from '../bitstream/bitWriter.js';
 import type { Sequence } from '../decode/reconstruct.js';
-import { buildFSEDecodeTable, normalizeCountsForTable, type FSEDecodeRow, writeNCount } from '../entropy/fse.js';
-import { buildHuffmanDecodeTable, weightsToNumBits } from '../entropy/huffman.js';
+import { buildFSEDecodeTable, type FSEDecodeRow, normalizeCountsForTable, writeNCount } from '../entropy/fse.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
   LITERALS_LENGTH_TABLE_LOG,
@@ -10,6 +8,12 @@ import {
   OFFSET_CODE_DEFAULT_DISTRIBUTION,
   OFFSET_CODE_TABLE_LOG,
 } from '../entropy/predefined.js';
+import {
+  buildGeneralCompressedLiteralsForBench,
+  encodeLiteralsSection,
+  type LiteralEntropyContext,
+  type LiteralEntropyTable,
+} from './literalsEncoder.js';
 
 // Predefined FSE tables built once and reused for sequence encoding.
 let cachedLLTable: readonly FSEDecodeRow[] | null = null;
@@ -76,6 +80,7 @@ interface SequenceTablesState {
 
 export interface SequenceEntropyContext {
   prevTables: SequenceTablesState | null;
+  prevLiteralsTable?: LiteralEntropyTable | null;
 }
 
 function rangeMask(startBit: number, endBit: number): number {
@@ -269,208 +274,6 @@ function findLengthCode(
   return null;
 }
 
-function buildSingleSymbolCompressedLiterals(literals: Uint8Array): Uint8Array | null {
-  if (literals.length === 0 || literals.length > 1023) return null;
-  const sym = literals[0] ?? 0;
-  for (let i = 1; i < literals.length; i++) {
-    if ((literals[i] ?? 0) !== sym) return null;
-  }
-  if (sym > 127) return null;
-  const numWeights = sym + 1;
-  if (numWeights < 1 || numWeights > 128) return null;
-
-  const weights = new Array<number>(numWeights).fill(0);
-  weights[sym] = 1;
-
-  let partialSum = 0;
-  for (const w of weights) {
-    if (w > 0) partialSum += 1 << (w - 1);
-  }
-  if (partialSum === 0) return null;
-  const maxNumBits = 32 - Math.clz32(partialSum);
-  const total = 1 << maxNumBits;
-  const remainder = total - partialSum;
-  if (remainder <= 0 || (remainder & (remainder - 1)) !== 0) return null;
-  const lastWeight = 32 - Math.clz32(remainder);
-  const fullWeights = [...weights, lastWeight];
-  while (fullWeights.length < 256) fullWeights.push(0);
-  const numBits = weightsToNumBits(fullWeights, maxNumBits);
-  const table = buildHuffmanDecodeTable(numBits, maxNumBits);
-  const symbolCode = table.findIndex((row) => row?.symbol === sym);
-  if (symbolCode < 0) return null;
-
-  const bitCounts = new Uint8Array(literals.length);
-  bitCounts.fill(maxNumBits);
-  const bitValues = new Uint16Array(literals.length);
-  bitValues.fill(symbolCode);
-  const stream = encodeReverseBitstream(bitCounts, bitValues);
-
-  const directHeader = 127 + numWeights;
-  const weightWriter = new BitWriter();
-  for (let i = 0; i < weights.length; i += 2) {
-    const hi = weights[i] ?? 0;
-    const lo = weights[i + 1] ?? 0;
-    weightWriter.writeBits(8, ((hi & 0xf) << 4) | (lo & 0xf));
-  }
-  const weightBytes = weightWriter.flush();
-
-  const compressedSize = 1 + weightBytes.length + stream.length;
-  if (compressedSize > 1023) return null;
-
-  const b0 = (2 | (0 << 2) | ((literals.length & 0x0f) << 4)) & 0xff;
-  const b1 = (((literals.length >> 4) & 0x3f) | ((compressedSize & 0x03) << 6)) & 0xff;
-  const b2 = (compressedSize >> 2) & 0xff;
-
-  const out = new Uint8Array(3 + 1 + weightBytes.length + stream.length);
-  out[0] = b0;
-  out[1] = b1;
-  out[2] = b2;
-  out[3] = directHeader & 0xff;
-  out.set(weightBytes, 4);
-  out.set(stream, 4 + weightBytes.length);
-  return out;
-}
-
-function splitPowerTerms(targetSum: number, count: number): number[] | null {
-  if (count < 1 || count > targetSum) return null;
-  const terms: number[] = [];
-  for (let bit = 31; bit >= 0; bit--) {
-    const value = 1 << bit;
-    if ((targetSum & value) !== 0) {
-      terms.push(value);
-    }
-  }
-  while (terms.length < count) {
-    let splitIndex = -1;
-    let largest = 0;
-    for (let i = 0; i < terms.length; i++) {
-      const term = terms[i] ?? 0;
-      if (term > largest) {
-        largest = term;
-        splitIndex = i;
-      }
-    }
-    if (splitIndex < 0 || largest <= 1) {
-      return null;
-    }
-    const half = largest >>> 1;
-    terms.splice(splitIndex, 1, half, half);
-  }
-  return terms;
-}
-
-function buildGeneralCompressedLiterals(literals: Uint8Array): Uint8Array | null {
-  if (literals.length === 0 || literals.length > 1023) return null;
-  const seen = new Uint8Array(256);
-  let numSymbols = 0;
-  let maxSymbol = 0;
-  for (let i = 0; i < literals.length; i++) {
-    const b = literals[i]!;
-    if (seen[b] === 0) {
-      seen[b] = 1;
-      numSymbols++;
-      if (b > maxSymbol) maxSymbol = b;
-    }
-  }
-  if (numSymbols === 0 || numSymbols > 128) return null;
-  if (maxSymbol > 127) return null;
-
-  const sortedSymbols: number[] = [];
-  for (let s = 0; s <= maxSymbol; s++) {
-    if (seen[s] !== 0) sortedSymbols.push(s);
-  }
-
-  // Construct a valid direct-weight table over symbols <= 127.
-  const partialTarget = 128; // maxNumBits=8 => total 256, remainder is 128 (power of two).
-  const contributions = splitPowerTerms(partialTarget, sortedSymbols.length);
-  if (!contributions) return null;
-  contributions.sort((a, b) => b - a);
-
-  const weights = new Array<number>(maxSymbol + 1).fill(0);
-  for (let i = 0; i < sortedSymbols.length; i++) {
-    const symbol = sortedSymbols[i] ?? 0;
-    const contribution = contributions[i] ?? 1;
-    const weight = 32 - Math.clz32(contribution);
-    if (weight < 1 || weight > 15) return null;
-    weights[symbol] = weight;
-  }
-
-  const fullWeights = [...weights, 8];
-  while (fullWeights.length < 256) fullWeights.push(0);
-  const numBits = weightsToNumBits(fullWeights, 8);
-  const table = buildHuffmanDecodeTable(numBits, 8);
-
-  const codeBySymbol = new Int32Array(256).fill(-1);
-  for (let i = 0; i < sortedSymbols.length; i++) {
-    const symbol = sortedSymbols[i]!;
-    const code = table.findIndex((row) => row?.symbol === symbol);
-    if (code < 0) return null;
-    codeBySymbol[symbol] = code;
-  }
-
-  const readCounts = new Uint8Array(literals.length);
-  const readValues = new Uint16Array(literals.length);
-  for (let i = 0; i < literals.length; i++) {
-    const code = codeBySymbol[literals[i]!]!;
-    if (code < 0) return null;
-    readCounts[i] = 8;
-    readValues[i] = code;
-  }
-  const stream = encodeReverseBitstream(readCounts, readValues);
-
-  const numWeights = weights.length;
-  if (numWeights < 1 || numWeights > 128) return null;
-  const directHeader = 127 + numWeights;
-  const weightWriter = new BitWriter();
-  for (let i = 0; i < weights.length; i += 2) {
-    const hi = weights[i] ?? 0;
-    const lo = weights[i + 1] ?? 0;
-    weightWriter.writeBits(8, ((hi & 0xf) << 4) | (lo & 0xf));
-  }
-  const weightBytes = weightWriter.flush();
-
-  const compressedSize = 1 + weightBytes.length + stream.length;
-  if (compressedSize > 1023) return null;
-  const b0 = (2 | (0 << 2) | ((literals.length & 0x0f) << 4)) & 0xff;
-  const b1 = (((literals.length >> 4) & 0x3f) | ((compressedSize & 0x03) << 6)) & 0xff;
-  const b2 = (compressedSize >> 2) & 0xff;
-
-  const out = new Uint8Array(3 + 1 + weightBytes.length + stream.length);
-  out[0] = b0;
-  out[1] = b1;
-  out[2] = b2;
-  out[3] = directHeader & 0xff;
-  out.set(weightBytes, 4);
-  out.set(stream, 4 + weightBytes.length);
-  return out;
-}
-
-function buildRawLiteralsSection(literals: Uint8Array): Uint8Array | null {
-  const size = literals.length;
-  if (size <= 31) {
-    const out = new Uint8Array(1 + size);
-    out[0] = (size << 3) | 0;
-    out.set(literals, 1);
-    return out;
-  }
-  if (size <= 0x0fff) {
-    const out = new Uint8Array(2 + size);
-    out[0] = ((size & 0x0f) << 4) | (1 << 2);
-    out[1] = (size >>> 4) & 0xff;
-    out.set(literals, 2);
-    return out;
-  }
-  if (size <= 0x0f_ffff) {
-    const out = new Uint8Array(3 + size);
-    out[0] = ((size & 0x0f) << 4) | (3 << 2);
-    out[1] = (size >>> 4) & 0xff;
-    out[2] = (size >>> 12) & 0xff;
-    out.set(literals, 3);
-    return out;
-  }
-  return null;
-}
-
 function encodeNumSequences(numSequences: number): Uint8Array | null {
   if (numSequences < 0 || numSequences > 0xffff + 0x7f00) return null;
   if (numSequences < 128) {
@@ -599,7 +402,10 @@ function scorePath(path: { states: number[] }, table: readonly FSEDecodeRow[], t
   return bits;
 }
 
-const normalizedTableCache = new Map<string, { table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }>();
+const normalizedTableCache = new Map<
+  string,
+  { table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }
+>();
 
 function getNormalizedTableCandidates(
   codes: ArrayLike<number>,
@@ -614,8 +420,8 @@ function getNormalizedTableCandidates(
   }
   if (distinct <= 1) return [];
   let minTableLog = 5;
-  while ((1 << minTableLog) < distinct && minTableLog < maxTableLog) minTableLog++;
-  if ((1 << minTableLog) < distinct) return [];
+  while (1 << minTableLog < distinct && minTableLog < maxTableLog) minTableLog++;
+  if (1 << minTableLog < distinct) return [];
   const maxLogFromSamples = codes.length > 1 ? 31 - Math.clz32(codes.length - 1) : 5;
   const limit = Math.max(minTableLog, Math.min(maxTableLog, maxLogFromSamples + 1));
   const results: Array<{ table: readonly FSEDecodeRow[]; tableLog: number; header: Uint8Array }> = [];
@@ -712,7 +518,8 @@ function chooseStreamMode(
   for (const compressed of compressedCandidates) {
     const compressedPath = buildStatePath(codes, compressed.table);
     if (compressedPath) {
-      const compressedScore = scorePath(compressedPath, compressed.table, compressed.tableLog) + compressed.header.length * 8;
+      const compressedScore =
+        scorePath(compressedPath, compressed.table, compressed.tableLog) + compressed.header.length * 8;
       if (compressedScore < bestScore) {
         best = {
           mode: 2,
@@ -830,24 +637,12 @@ export function buildCompressedBlockPayload(
   sequences: Sequence[],
   context?: SequenceEntropyContext,
 ): Uint8Array | null {
-  const literalsLength = literals.length;
-  const rawSection = buildRawLiteralsSection(literals);
-  if (!rawSection) return null;
-  let literalsSection = rawSection;
-
-  if (literalsLength >= 8 && literalsLength <= 1023) {
-    const single = buildSingleSymbolCompressedLiterals(literals);
-    if (single && single.length < literalsSection.length) {
-      literalsSection = single;
-    }
-  }
-
-  if (literalsLength >= 16 && literalsLength <= 1023) {
-    const general = buildGeneralCompressedLiterals(literals);
-    if (general && general.length < literalsSection.length) {
-      literalsSection = general;
-    }
-  }
+  const literalsContext: LiteralEntropyContext = {
+    prevTable: context?.prevLiteralsTable ?? null,
+  };
+  const encodedLiterals = encodeLiteralsSection(literals, literalsContext);
+  if (!encodedLiterals) return null;
+  const literalsSection = encodedLiterals.section;
   const seqSection = buildSequenceSection(sequences, context);
   if (!seqSection) return null;
   const out = new Uint8Array(literalsSection.length + seqSection.section.length);
@@ -855,6 +650,7 @@ export function buildCompressedBlockPayload(
   out.set(seqSection.section, literalsSection.length);
   if (context) {
     context.prevTables = seqSection.tables;
+    context.prevLiteralsTable = encodedLiterals.table;
   }
   return out;
 }
@@ -872,7 +668,7 @@ export function writeCompressedBlock(payload: Uint8Array, last: boolean): Uint8A
 // Internal benchmark hooks for hot-path profiling.
 export const __benchInternals = {
   encodeReverseBitstream,
-  buildRawLiteralsSection,
-  buildGeneralCompressedLiterals,
+  buildGeneralCompressedLiterals: buildGeneralCompressedLiteralsForBench,
+  buildPredefinedSequenceSection: (sequences: readonly Sequence[]) => buildSequenceSection(sequences)?.section ?? null,
   buildSequenceSection,
 };

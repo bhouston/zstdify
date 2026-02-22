@@ -13,6 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
+import { decompress as fzstdDecompress } from 'fzstd';
 import { Bench } from 'tinybench';
 import { ZSTDDecoder } from 'zstddec';
 import { compress, decompress } from 'zstdify';
@@ -43,6 +44,7 @@ interface Row {
   decodeZstdifyFromZstdifyMs: number;
   decodeZstdifyFromNodeMs: number;
   decodeNodeFromNodeMs: number;
+  decodeFzstdFromNodeMs: number;
   decodeZstddecFromZstdifyMs: number;
 }
 
@@ -76,6 +78,9 @@ async function main(): Promise<void> {
       bench.add('decode node <- node', () => {
         zlib.zstdDecompressSync(nodeCompressed);
       });
+      bench.add('decode fzstd <- node', () => {
+        fzstdDecompress(nodeCompressed);
+      });
       bench.add('decode zstddec <- zstdify', () => {
         decoder.decode(zstdifyCompressed, payloadBytes);
       });
@@ -98,6 +103,7 @@ async function main(): Promise<void> {
         decodeZstdifyFromZstdifyMs: getMedianMs('decode zstdify <- zstdify'),
         decodeZstdifyFromNodeMs: getMedianMs('decode zstdify <- node'),
         decodeNodeFromNodeMs: getMedianMs('decode node <- node'),
+        decodeFzstdFromNodeMs: getMedianMs('decode fzstd <- node'),
         decodeZstddecFromZstdifyMs: getMedianMs('decode zstddec <- zstdify'),
       });
     }
@@ -116,6 +122,7 @@ async function main(): Promise<void> {
       decodeZstdifyFromZstdifyMbps: mbps(r.payloadBytes, r.decodeZstdifyFromZstdifyMs),
       decodeZstdifyFromNodeMbps: mbps(r.payloadBytes, r.decodeZstdifyFromNodeMs),
       decodeNodeFromNodeMbps: mbps(r.payloadBytes, r.decodeNodeFromNodeMs),
+      decodeFzstdFromNodeMbps: mbps(r.payloadBytes, r.decodeFzstdFromNodeMs),
       decodeZstddecFromZstdifyMbps: mbps(r.payloadBytes, r.decodeZstddecFromZstdifyMs),
     })),
   };
@@ -130,11 +137,11 @@ async function main(): Promise<void> {
     '',
     '## Throughput (MB/s)',
     '',
-    '| Payload | Category | Level | zstdify <- zstdify | zstdify <- node | node <- node | zstddec <- zstdify |',
-    '|---|---|---:|---:|---:|---:|---:|',
+    '| Payload | Category | Level | zstdify <- zstdify | zstdify <- node | node <- node | fzstd <- node | zstddec <- zstdify |',
+    '|---|---|---:|---:|---:|---:|---:|---:|',
     ...summary.throughput.map(
       (t) =>
-        `| ${t.payloadId} | ${t.payloadCategory} | ${t.level} | ${t.decodeZstdifyFromZstdifyMbps.toFixed(2)} | ${t.decodeZstdifyFromNodeMbps.toFixed(2)} | ${t.decodeNodeFromNodeMbps.toFixed(2)} | ${t.decodeZstddecFromZstdifyMbps.toFixed(2)} |`,
+        `| ${t.payloadId} | ${t.payloadCategory} | ${t.level} | ${t.decodeZstdifyFromZstdifyMbps.toFixed(2)} | ${t.decodeZstdifyFromNodeMbps.toFixed(2)} | ${t.decodeNodeFromNodeMbps.toFixed(2)} | ${t.decodeFzstdFromNodeMbps.toFixed(2)} | ${t.decodeZstddecFromZstdifyMbps.toFixed(2)} |`,
     ),
     '',
   ].join('\n');

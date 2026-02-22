@@ -272,13 +272,17 @@ export function decodeSequences(
       throw new ZstdError('Invalid match length code', 'corruption_detected');
     }
     const matchLength =
-      mlCode <= 31 ? mlCode + 3 : ML_BASELINE[mlCode]! + (ML_NUMBITS[mlCode]! > 0 ? reader.readBits(ML_NUMBITS[mlCode]!) : 0);
+      mlCode <= 31
+        ? mlCode + 3
+        : ML_BASELINE[mlCode]! + (ML_NUMBITS[mlCode]! > 0 ? reader.readBits(ML_NUMBITS[mlCode]!) : 0);
 
     if (llCode >= LL_BASELINE.length || llCode >= LL_NUMBITS.length) {
       throw new ZstdError('Invalid literals length code', 'corruption_detected');
     }
     const literalsLength =
-      llCode <= 15 ? llCode : LL_BASELINE[llCode]! + (LL_NUMBITS[llCode]! > 0 ? reader.readBits(LL_NUMBITS[llCode]!) : 0);
+      llCode <= 15
+        ? llCode
+        : LL_BASELINE[llCode]! + (LL_NUMBITS[llCode]! > 0 ? reader.readBits(LL_NUMBITS[llCode]!) : 0);
     sequenceLiteralsLength[i] = literalsLength;
     sequenceOffsets[i] = offsetValue;
     sequenceMatchLengths[i] = matchLength;

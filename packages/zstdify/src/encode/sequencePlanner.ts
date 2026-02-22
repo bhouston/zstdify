@@ -79,7 +79,12 @@ function longestMatch(data: Uint8Array, pos: number, candidate: number, maxLengt
   return len;
 }
 
-function scoreMatch(length: number, offset: number, repOffsets: [number, number, number], repScoreBonus: [number, number, number]): number {
+function scoreMatch(
+  length: number,
+  offset: number,
+  repOffsets: [number, number, number],
+  repScoreBonus: [number, number, number],
+): number {
   let score = length * 16;
   if (offset === repOffsets[0]) score += repScoreBonus[0];
   else if (offset === repOffsets[1]) score += repScoreBonus[1];
@@ -118,7 +123,11 @@ function findBestMatchAt(parse: ParseState, pos: number, repOffsets: [number, nu
   return best;
 }
 
-function applyRepOffsetUpdate(repOffsets: [number, number, number], offsetValue: number, literalsLength: number): [number, number, number] {
+function applyRepOffsetUpdate(
+  repOffsets: [number, number, number],
+  offsetValue: number,
+  literalsLength: number,
+): [number, number, number] {
   const next: [number, number, number] = [repOffsets[0], repOffsets[1], repOffsets[2]];
   const ll0 = literalsLength === 0;
   const isNonRepeat = offsetValue > 3 || (offsetValue === 3 && ll0);
@@ -143,7 +152,11 @@ function applyRepOffsetUpdate(repOffsets: [number, number, number], offsetValue:
   return next;
 }
 
-function toOffsetValue(offset: number, literalsLength: number, repOffsets: [number, number, number]): { offsetValue: number; nextRepOffsets: [number, number, number] } {
+function toOffsetValue(
+  offset: number,
+  literalsLength: number,
+  repOffsets: [number, number, number],
+): { offsetValue: number; nextRepOffsets: [number, number, number] } {
   // Keep conservative non-repeat offset encoding for interoperability.
   // Repeat-offset modeling is still used for scoring/search decisions.
   const offsetValue = offset + 3;
@@ -186,9 +199,10 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
     };
   }
 
-  const history = options.history && options.history.length > 0
-    ? options.history.subarray(Math.max(0, options.history.length - WINDOW_SIZE))
-    : new Uint8Array(0);
+  const history =
+    options.history && options.history.length > 0
+      ? options.history.subarray(Math.max(0, options.history.length - WINDOW_SIZE))
+      : new Uint8Array(0);
   const historyLength = history.length;
   const combined = new Uint8Array(historyLength + input.length);
   if (historyLength > 0) combined.set(history, 0);
@@ -197,9 +211,7 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
   const parse: ParseState = {
     input: combined,
     chainPrev: buildChainPrev(combined),
-    repOffsets: options.repOffsets
-      ? [options.repOffsets[0], options.repOffsets[1], options.repOffsets[2]]
-      : [1, 4, 8],
+    repOffsets: options.repOffsets ? [options.repOffsets[0], options.repOffsets[1], options.repOffsets[2]] : [1, 4, 8],
     options: {
       chainLimit: Math.max(1, options.chainLimit),
       repScoreBonus: options.repScoreBonus ?? [48, 24, 12],

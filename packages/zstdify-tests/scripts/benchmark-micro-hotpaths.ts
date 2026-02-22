@@ -35,9 +35,8 @@ async function main(): Promise<void> {
   const plan = buildGreedySequences(planningInput, { strategy: 'lazy', history });
   if (plan.sequences.length === 0) throw new Error('Unable to produce sequences for microbench payload.');
 
-  const literalsForHuffman = plan.literals.length >= 32
-    ? plan.literals
-    : payload.subarray(0, Math.min(payload.length, 512));
+  const literalsForHuffman =
+    plan.literals.length >= 32 ? plan.literals : payload.subarray(0, Math.min(payload.length, 512));
   const bitInputs = createBitInputs(4096);
 
   const bench = new Bench({

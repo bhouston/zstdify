@@ -20,9 +20,9 @@ import {
   appendRangeToHistoryWindow,
   appendRLEToHistoryWindow,
   appendToHistoryWindow,
+  type DecoderReuseBag,
   executeSequencesInto,
   getOrCreateHistoryWindow,
-  type DecoderReuseBag,
 } from './reconstruct.js';
 import { decodeSequences, type SequenceTables } from './sequences.js';
 
@@ -43,11 +43,7 @@ export function decompressFrame(
   const repOffsets: [number, number, number] = dictionary?.repOffsets
     ? [dictionary.repOffsets[0], dictionary.repOffsets[1], dictionary.repOffsets[2]]
     : [1, 4, 8];
-  const history = getOrCreateHistoryWindow(
-    header.windowSize,
-    dictionary?.historyPrefix,
-    reuseContext,
-  );
+  const history = getOrCreateHistoryWindow(header.windowSize, dictionary?.historyPrefix, reuseContext);
   let prevHuffmanTable: {
     table: ReturnType<typeof import('../entropy/huffman.js').buildHuffmanDecodeTable>;
     maxNumBits: number;
