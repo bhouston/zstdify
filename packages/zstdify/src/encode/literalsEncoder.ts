@@ -22,6 +22,23 @@ interface HuffmanBuildResult {
   table: LiteralEntropyTable;
 }
 
+let literalBitCountsScratch: Uint8Array | null = null;
+let literalBitValuesScratch: Uint32Array | null = null;
+
+function ensureLiteralBitScratch(minLength: number): { counts: Uint8Array; values: Uint32Array } {
+  const counts = literalBitCountsScratch;
+  const values = literalBitValuesScratch;
+  if (counts && values && counts.length >= minLength && values.length >= minLength) {
+    return { counts, values };
+  }
+  let capacity = counts?.length ?? 0;
+  if (capacity === 0) capacity = 64;
+  while (capacity < minLength) capacity *= 2;
+  literalBitCountsScratch = new Uint8Array(capacity);
+  literalBitValuesScratch = new Uint32Array(capacity);
+  return { counts: literalBitCountsScratch, values: literalBitValuesScratch };
+}
+
 function buildRawLiteralsSection(literals: Uint8Array): Uint8Array | null {
   const size = literals.length;
   if (size <= 31) {
@@ -170,8 +187,9 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
 }
 
 function encodeLiteralsWithTable(table: LiteralEntropyTable, literals: Uint8Array): Uint8Array | null {
-  const bitCounts = new Uint8Array(literals.length);
-  const bitValues = new Uint32Array(literals.length);
+  const scratch = ensureLiteralBitScratch(literals.length);
+  const bitCounts = scratch.counts.subarray(0, literals.length);
+  const bitValues = scratch.values.subarray(0, literals.length);
   for (let i = 0; i < literals.length; i++) {
     const sym = literals[i] ?? 0;
     const bits = table.numBitsBySymbol[sym] ?? 0;

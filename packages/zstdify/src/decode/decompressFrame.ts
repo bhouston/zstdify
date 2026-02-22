@@ -76,6 +76,7 @@ export function decompressFrame(
   };
 
   let blockIndex = 0;
+  const onBlockDecoded = debugTrace?.onBlockDecoded;
   while (true) {
     if (pos + 3 > data.length) {
       throw new ZstdError('Block header truncated', 'corruption_detected');
@@ -113,13 +114,15 @@ export function decompressFrame(
     } else if (block.blockType === 2) {
       const blockContent = data.subarray(pos, pos + block.blockSize);
       const { header: litHeader, dataOffset: litDataOffset } = parseLiteralsSectionHeader(blockContent, 0);
-      blockLiteralsInfo = {
-        blockType: litHeader.blockType,
-        regeneratedSize: litHeader.regeneratedSize,
-        compressedSize: litHeader.compressedSize,
-        numStreams: litHeader.numStreams,
-        headerSize: litHeader.headerSize,
-      };
+      if (onBlockDecoded) {
+        blockLiteralsInfo = {
+          blockType: litHeader.blockType,
+          regeneratedSize: litHeader.regeneratedSize,
+          compressedSize: litHeader.compressedSize,
+          numStreams: litHeader.numStreams,
+          headerSize: litHeader.headerSize,
+        };
+      }
 
       let literals: Uint8Array;
       let litBytesConsumed: number;
@@ -175,34 +178,25 @@ export function decompressFrame(
           reuseContext._sequences = seqResult.sequences;
         }
         prevSeqTables = seqResult.tables;
-        let repeatOffsetCandidateCount = 0;
-        for (let i = 0; i < seqResult.sequences.length; i++) {
-          const offsetValue = seqResult.sequences.offset[i] ?? 0;
-          const llValue = seqResult.sequences.literalsLength[i] ?? 0;
-          if (offsetValue <= 2 || (offsetValue === 3 && llValue > 0)) {
-            repeatOffsetCandidateCount++;
-          }
+        if (onBlockDecoded) {
+          blockSequencesInfo = {
+            numSequences: seqResult.metadata.numSequences,
+            llMode: seqResult.metadata.llMode,
+            ofMode: seqResult.metadata.ofMode,
+            mlMode: seqResult.metadata.mlMode,
+            llTableLog: seqResult.metadata.llTableLog,
+            ofTableLog: seqResult.metadata.ofTableLog,
+            mlTableLog: seqResult.metadata.mlTableLog,
+            repeatOffsetCandidateCount: seqResult.metadata.repeatOffsetCandidateCount,
+          };
         }
-        blockSequencesInfo = {
-          numSequences: seqResult.metadata.numSequences,
-          llMode: seqResult.metadata.llMode,
-          ofMode: seqResult.metadata.ofMode,
-          mlMode: seqResult.metadata.mlMode,
-          llTableLog: seqResult.metadata.llTableLog,
-          ofTableLog: seqResult.metadata.ofTableLog,
-          mlTableLog: seqResult.metadata.mlTableLog,
-          repeatOffsetCandidateCount,
-        };
         if (seqResult.sequences.length === 0) {
           appendOutput(literals);
           if (!block.lastBlock) {
             appendToHistoryWindow(history, literals);
           }
         } else {
-          let decodedSize = literals.length;
-          for (let i = 0; i < seqResult.sequences.length; i++) {
-            decodedSize += seqResult.sequences.matchLength[i] ?? 0;
-          }
+          const decodedSize = literals.length + seqResult.metadata.totalMatchLength;
           ensureOutputCapacity(decodedSize);
           const start = totalSize;
           const written = executeSequencesInto(
@@ -223,17 +217,19 @@ export function decompressFrame(
       throw new ZstdError('Unsupported block type', 'corruption_detected');
     }
 
-    debugTrace?.onBlockDecoded?.({
-      blockIndex,
-      blockType: block.blockType,
-      blockSize: block.blockSize,
-      lastBlock: block.lastBlock,
-      inputOffset: blockHeaderPos,
-      outputStart: blockOutputStart,
-      outputEnd: totalSize,
-      literals: blockLiteralsInfo,
-      sequences: blockSequencesInfo,
-    });
+    if (onBlockDecoded) {
+      onBlockDecoded({
+        blockIndex,
+        blockType: block.blockType,
+        blockSize: block.blockSize,
+        lastBlock: block.lastBlock,
+        inputOffset: blockHeaderPos,
+        outputStart: blockOutputStart,
+        outputEnd: totalSize,
+        literals: blockLiteralsInfo,
+        sequences: blockSequencesInfo,
+      });
+    }
     blockIndex++;
 
     if (maxSize !== undefined && totalSize > maxSize) {

@@ -71,6 +71,8 @@ export interface SequenceSectionMetadata {
   llTableLog: number;
   ofTableLog: number;
   mlTableLog: number;
+  totalMatchLength: number;
+  repeatOffsetCandidateCount: number;
 }
 
 function buildRLETable(symbol: number, tableLog: number): FSEDecodeTable {
@@ -151,6 +153,8 @@ export function decodeSequences(
         llTableLog: (prevTables ?? DEFAULT_SEQUENCE_TABLES).llTableLog,
         ofTableLog: (prevTables ?? DEFAULT_SEQUENCE_TABLES).ofTableLog,
         mlTableLog: (prevTables ?? DEFAULT_SEQUENCE_TABLES).mlTableLog,
+        totalMatchLength: 0,
+        repeatOffsetCandidateCount: 0,
       },
     };
   }
@@ -257,6 +261,8 @@ export function decodeSequences(
   const sequenceLiteralsLength = sequences.literalsLength;
   const sequenceOffsets = sequences.offset;
   const sequenceMatchLengths = sequences.matchLength;
+  let totalMatchLength = 0;
+  let repeatOffsetCandidateCount = 0;
 
   for (let i = 0; i < numSequences; i++) {
     const isLast = i === numSequences - 1;
@@ -295,6 +301,10 @@ export function decodeSequences(
     sequenceLiteralsLength[i] = literalsLength;
     sequenceOffsets[i] = offsetValue;
     sequenceMatchLengths[i] = matchLength;
+    totalMatchLength += matchLength;
+    if (offsetValue <= 2 || (offsetValue === 3 && literalsLength > 0)) {
+      repeatOffsetCandidateCount++;
+    }
 
     if (!isLast) {
       // State updates for next sequence are LL, ML, OF.
@@ -320,6 +330,8 @@ export function decodeSequences(
       llTableLog,
       ofTableLog,
       mlTableLog,
+      totalMatchLength,
+      repeatOffsetCandidateCount,
     },
   };
 }

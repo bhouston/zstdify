@@ -352,6 +352,42 @@ interface SymbolizedSequences {
   ofExtraValue: Uint32Array;
 }
 
+interface SymbolizedSequencesScratch {
+  llCodes: Uint8Array;
+  llExtraN: Uint8Array;
+  llExtraValue: Uint32Array;
+  mlCodes: Uint8Array;
+  mlExtraN: Uint8Array;
+  mlExtraValue: Uint32Array;
+  ofCodes: Uint8Array;
+  ofExtraN: Uint8Array;
+  ofExtraValue: Uint32Array;
+}
+
+let symbolizedScratch: SymbolizedSequencesScratch | null = null;
+
+function ensureSymbolizedScratch(minLength: number): SymbolizedSequencesScratch {
+  const existing = symbolizedScratch;
+  if (existing && existing.llCodes.length >= minLength) {
+    return existing;
+  }
+  let capacity = existing?.llCodes.length ?? 0;
+  if (capacity === 0) capacity = 32;
+  while (capacity < minLength) capacity *= 2;
+  symbolizedScratch = {
+    llCodes: new Uint8Array(capacity),
+    llExtraN: new Uint8Array(capacity),
+    llExtraValue: new Uint32Array(capacity),
+    mlCodes: new Uint8Array(capacity),
+    mlExtraN: new Uint8Array(capacity),
+    mlExtraValue: new Uint32Array(capacity),
+    ofCodes: new Uint8Array(capacity),
+    ofExtraN: new Uint8Array(capacity),
+    ofExtraValue: new Uint32Array(capacity),
+  };
+  return symbolizedScratch;
+}
+
 interface StreamChoice {
   mode: 0 | 2 | 3;
   table: FSEDecodeTable;
@@ -438,15 +474,16 @@ function getNormalizedTableCandidates(
 function symbolizedSequences(sequences: readonly Sequence[]): SymbolizedSequences | null {
   if (sequences.length === 0) return null;
   const numSequences = sequences.length;
-  const llCodes = new Uint8Array(numSequences);
-  const llExtraN = new Uint8Array(numSequences);
-  const llExtraValue = new Uint32Array(numSequences);
-  const mlCodes = new Uint8Array(numSequences);
-  const mlExtraN = new Uint8Array(numSequences);
-  const mlExtraValue = new Uint32Array(numSequences);
-  const ofCodes = new Uint8Array(numSequences);
-  const ofExtraN = new Uint8Array(numSequences);
-  const ofExtraValue = new Uint32Array(numSequences);
+  const scratch = ensureSymbolizedScratch(numSequences);
+  const llCodes = scratch.llCodes.subarray(0, numSequences);
+  const llExtraN = scratch.llExtraN.subarray(0, numSequences);
+  const llExtraValue = scratch.llExtraValue.subarray(0, numSequences);
+  const mlCodes = scratch.mlCodes.subarray(0, numSequences);
+  const mlExtraN = scratch.mlExtraN.subarray(0, numSequences);
+  const mlExtraValue = scratch.mlExtraValue.subarray(0, numSequences);
+  const ofCodes = scratch.ofCodes.subarray(0, numSequences);
+  const ofExtraN = scratch.ofExtraN.subarray(0, numSequences);
+  const ofExtraValue = scratch.ofExtraValue.subarray(0, numSequences);
 
   for (let i = 0; i < numSequences; i++) {
     const sequence = sequences[i]!;
