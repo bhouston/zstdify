@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Focused decode profiler:
- * - compress once
+ * - compress corpus payloads once
  * - run many decode turns in a tight loop
  * - intended to run with --cpu-prof for hotspot analysis
  *
@@ -37,26 +37,44 @@ function parseTurns(argv: string[]): number {
     }
     return Math.floor(parsed);
   }
-  return 80_000;
+  return process.env.BENCH_PROFILE_DATASET ? 5 : 1;
 }
 
 function main(): void {
   const turns = parseTurns(process.argv.slice(2));
-  const payload = selectProfilePayload(loadBenchCorpus());
-  const zstdifyCompressed = compress(payload.data, { level: 6 });
-  const nodeCompressed = zlib.zstdCompressSync(Buffer.from(payload.data), {
-    params: { [zlib.constants.ZSTD_c_compressionLevel]: 6 },
-  });
+  const corpus = loadBenchCorpus();
+  const payloads = process.env.BENCH_PROFILE_DATASET ? [selectProfilePayload(corpus)] : corpus;
+  const prepared = payloads.map((payload) => ({
+    id: payload.id,
+    category: payload.category,
+    bytes: payload.data.length,
+    zstdifyCompressed: compress(payload.data, { level: 6 }),
+    nodeCompressed: zlib.zstdCompressSync(Buffer.from(payload.data), {
+      params: { [zlib.constants.ZSTD_c_compressionLevel]: 6 },
+    }),
+    ctxZstdify: {} as DecoderContext,
+    ctxNode: {} as DecoderContext,
+    turns: 0,
+  }));
 
-  const ctxZstdify: DecoderContext = {};
-  const ctxNode: DecoderContext = {};
+  if (prepared.length === 0) {
+    throw new Error('Local benchmark corpus is empty.');
+  }
+
   let checksum = 0;
+  let totalDecodedBytes = 0;
   const started = performance.now();
   for (let i = 0; i < turns; i++) {
-    const a = decompress(zstdifyCompressed, { validateChecksum: false, reuseContext: ctxZstdify });
-    const b = decompress(nodeCompressed, { validateChecksum: false, reuseContext: ctxNode });
+    const p = prepared[i % prepared.length];
+    if (!p) {
+      throw new Error('Profile payload selection failed');
+    }
+    const a = decompress(p.zstdifyCompressed, { validateChecksum: false, reuseContext: p.ctxZstdify });
+    const b = decompress(p.nodeCompressed, { validateChecksum: false, reuseContext: p.ctxNode });
     // biome-ignore lint/style/noNonNullAssertion: safe
     checksum = (checksum + a[0]! + b[0]!) | 0;
+    p.turns++;
+    totalDecodedBytes += p.bytes * 2;
   }
   const elapsedMs = performance.now() - started;
 
@@ -65,12 +83,18 @@ function main(): void {
     timestamp: new Date().toISOString(),
     nodeVersion: process.version,
     turns,
-    payloadId: payload.id,
-    payloadCategory: payload.category,
-    payloadBytes: payload.data.length,
+    profileMode: process.env.BENCH_PROFILE_DATASET ? 'single-payload' : 'full-corpus',
+    payloadCount: prepared.length,
+    payloads: prepared.map((p) => ({
+      id: p.id,
+      category: p.category,
+      bytes: p.bytes,
+      turns: p.turns,
+    })),
     elapsedMs: Number(elapsedMs.toFixed(2)),
     decodeOps: turns * 2,
     decodeOpsPerSecond: Number(((turns * 2 * 1000) / elapsedMs).toFixed(2)),
+    decodedMBPerSecond: Number(((totalDecodedBytes / 1_000_000 / elapsedMs) * 1000).toFixed(2)),
     checksum,
   };
 
