@@ -1,4 +1,5 @@
 import { BitWriter } from '../bitstream/bitWriter.js';
+import { encodeReverseBitstream } from '../bitstream/reverseBitWriter.js';
 import { buildHuffmanDecodeTable, weightsToNumBits } from '../entropy/huffman.js';
 
 export interface LiteralEntropyTable {
@@ -19,30 +20,6 @@ export interface EncodedLiteralsSection {
 interface HuffmanBuildResult {
   weights: number[];
   table: LiteralEntropyTable;
-}
-
-function encodeReverseBitstream(bitCounts: Uint8Array, bitValues: Uint32Array): Uint8Array {
-  let bitLength = 1; // End marker
-  for (let i = 0; i < bitCounts.length; i++) {
-    bitLength += bitCounts[i] ?? 0;
-  }
-  const out = new Uint8Array((bitLength + 7) >>> 3);
-  let bitPos = 0;
-  const writeBitsLSB = (n: number, value: number): void => {
-    for (let i = 0; i < n; i++) {
-      if (((value >>> i) & 1) !== 0) {
-        const idx = bitPos >>> 3;
-        out[idx] = ((out[idx] ?? 0) | (1 << (bitPos & 7))) & 0xff;
-      }
-      bitPos++;
-    }
-  };
-  for (let i = bitCounts.length - 1; i >= 0; i--) {
-    const n = bitCounts[i] ?? 0;
-    if (n > 0) writeBitsLSB(n, bitValues[i] ?? 0);
-  }
-  out[bitPos >>> 3] = ((out[bitPos >>> 3] ?? 0) | (1 << (bitPos & 7))) & 0xff;
-  return out;
 }
 
 function buildRawLiteralsSection(literals: Uint8Array): Uint8Array | null {

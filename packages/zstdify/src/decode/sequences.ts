@@ -73,14 +73,6 @@ export interface SequenceSectionMetadata {
   mlTableLog: number;
 }
 
-function getStateRow(table: readonly FSEDecodeRow[], stateValue: number): FSEDecodeRow {
-  const row = table[stateValue];
-  if (!row) {
-    throw new ZstdError('FSE invalid state', 'corruption_detected');
-  }
-  return row;
-}
-
 function buildRLETable(symbol: number, tableLog: number): FSEDecodeRow[] {
   const cache = tableLog === 5 ? RLE_TABLE_CACHE_5 : tableLog === 6 ? RLE_TABLE_CACHE_6 : null;
   if (cache) {
@@ -247,9 +239,9 @@ export function decodeSequences(
   const reader = new BitReaderReverse(bitstream, 0, bitstreamSize);
   reader.skipPadding();
   // Initial states are read in LL, OF, ML order.
-  const stateLL = { value: llTableLog > 0 ? reader.readBits(llTableLog) : 0 };
-  const stateOF = { value: ofTableLog > 0 ? reader.readBits(ofTableLog) : 0 };
-  const stateML = { value: mlTableLog > 0 ? reader.readBits(mlTableLog) : 0 };
+  let stateLL = llTableLog > 0 ? reader.readBits(llTableLog) : 0;
+  let stateOF = ofTableLog > 0 ? reader.readBits(ofTableLog) : 0;
+  let stateML = mlTableLog > 0 ? reader.readBits(mlTableLog) : 0;
 
   const sequences = ensurePackedSequencesCapacity(sequenceReuse, numSequences);
   const sequenceLiteralsLength = sequences.literalsLength;
@@ -259,39 +251,42 @@ export function decodeSequences(
   for (let i = 0; i < numSequences; i++) {
     const isLast = i === numSequences - 1;
     // Per spec, sequence tuple decode order is OF, ML, LL.
-    const ofRow = getStateRow(ofTable, stateOF.value);
-    const mlRow = getStateRow(mlTable, stateML.value);
-    const llRow = getStateRow(llTable, stateLL.value);
+    const ofRow = ofTable[stateOF];
+    const mlRow = mlTable[stateML];
+    const llRow = llTable[stateLL];
+    if (!ofRow || !mlRow || !llRow) {
+      throw new ZstdError('FSE invalid state', 'corruption_detected');
+    }
     const offsetCode = ofRow.symbol;
     const mlCode = mlRow.symbol;
     const llCode = llRow.symbol;
 
     const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? reader.readBits(offsetCode) : 0);
 
-    if (mlCode >= ML_BASELINE.length || mlCode >= ML_NUMBITS.length) {
+    if (mlCode >= ML_BASELINE.length) {
       throw new ZstdError('Invalid match length code', 'corruption_detected');
     }
+    const mlNumBits = ML_NUMBITS[mlCode]!;
+    const mlBase = ML_BASELINE[mlCode]!;
     const matchLength =
-      mlCode <= 31
-        ? mlCode + 3
-        : ML_BASELINE[mlCode]! + (ML_NUMBITS[mlCode]! > 0 ? reader.readBits(ML_NUMBITS[mlCode]!) : 0);
+      mlCode <= 31 ? mlCode + 3 : mlBase + (mlNumBits > 0 ? reader.readBits(mlNumBits) : 0);
 
-    if (llCode >= LL_BASELINE.length || llCode >= LL_NUMBITS.length) {
+    if (llCode >= LL_BASELINE.length) {
       throw new ZstdError('Invalid literals length code', 'corruption_detected');
     }
+    const llNumBits = LL_NUMBITS[llCode]!;
+    const llBase = LL_BASELINE[llCode]!;
     const literalsLength =
-      llCode <= 15
-        ? llCode
-        : LL_BASELINE[llCode]! + (LL_NUMBITS[llCode]! > 0 ? reader.readBits(LL_NUMBITS[llCode]!) : 0);
+      llCode <= 15 ? llCode : llBase + (llNumBits > 0 ? reader.readBits(llNumBits) : 0);
     sequenceLiteralsLength[i] = literalsLength;
     sequenceOffsets[i] = offsetValue;
     sequenceMatchLengths[i] = matchLength;
 
     if (!isLast) {
       // State updates for next sequence are LL, ML, OF.
-      stateLL.value = llRow.baseline + (llRow.numBits > 0 ? reader.readBits(llRow.numBits) : 0);
-      stateML.value = mlRow.baseline + (mlRow.numBits > 0 ? reader.readBits(mlRow.numBits) : 0);
-      stateOF.value = ofRow.baseline + (ofRow.numBits > 0 ? reader.readBits(ofRow.numBits) : 0);
+      stateLL = llRow.baseline + (llRow.numBits > 0 ? reader.readBits(llRow.numBits) : 0);
+      stateML = mlRow.baseline + (mlRow.numBits > 0 ? reader.readBits(mlRow.numBits) : 0);
+      stateOF = ofRow.baseline + (ofRow.numBits > 0 ? reader.readBits(ofRow.numBits) : 0);
     }
   }
 

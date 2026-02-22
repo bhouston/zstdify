@@ -1,5 +1,6 @@
 import type { Sequence } from '../decode/reconstruct.js';
 import { buildFSEDecodeTable, type FSEDecodeRow, normalizeCountsForTable, writeNCount } from '../entropy/fse.js';
+import { encodeReverseBitstream } from '../bitstream/reverseBitWriter.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
   LITERALS_LENGTH_TABLE_LOG,
@@ -58,6 +59,8 @@ const U32_ALL_BITS = 0xffff_ffff >>> 0;
 const pathTableCache = new WeakMap<readonly FSEDecodeRow[], PrecomputedPathTable>();
 let pathMasksScratch: Uint32Array | null = null;
 let pathNextChoiceScratch: Int32Array | null = null;
+let sequenceReadCountsScratch: Uint8Array | null = null;
+let sequenceReadValuesScratch: Uint32Array | null = null;
 
 interface PrecomputedPathTable {
   tableSize: number;
@@ -214,38 +217,21 @@ function getPathNextChoiceScratch(requiredLength: number): Int32Array {
   if (!pathNextChoiceScratch || pathNextChoiceScratch.length < requiredLength) {
     pathNextChoiceScratch = new Int32Array(requiredLength);
   }
-  pathNextChoiceScratch.fill(-1, 0, requiredLength);
   return pathNextChoiceScratch;
 }
 
-function encodeReverseBitstream(bitCounts: ArrayLike<number>, bitValues: ArrayLike<number>): Uint8Array {
-  let bitLength = 1; // end marker
-  for (let i = 0; i < bitCounts.length; i++) {
-    const n = bitCounts[i] ?? 0;
-    if (n > 0) bitLength += n;
+function getSequenceReadCountsScratch(requiredLength: number): Uint8Array {
+  if (!sequenceReadCountsScratch || sequenceReadCountsScratch.length < requiredLength) {
+    sequenceReadCountsScratch = new Uint8Array(requiredLength);
   }
-  const paddedBits = (bitLength + 7) & ~7;
-  const out = new Uint8Array(paddedBits >>> 3);
-  let bitPos = 0;
-  const writeBitsLSB = (n: number, value: number): void => {
-    for (let i = 0; i < n; i++) {
-      if (((value >>> i) & 1) !== 0) {
-        const idx = bitPos >>> 3;
-        out[idx] = (out[idx]! | (1 << (bitPos & 7))) & 0xff;
-      }
-      bitPos++;
-    }
-  };
-  for (let i = bitCounts.length - 1; i >= 0; i--) {
-    const n = bitCounts[i] ?? 0;
-    if (n <= 0) continue;
-    writeBitsLSB(n, bitValues[i] ?? 0);
+  return sequenceReadCountsScratch;
+}
+
+function getSequenceReadValuesScratch(requiredLength: number): Uint32Array {
+  if (!sequenceReadValuesScratch || sequenceReadValuesScratch.length < requiredLength) {
+    sequenceReadValuesScratch = new Uint32Array(requiredLength);
   }
-  {
-    const idx = bitPos >>> 3;
-    out[idx] = (out[idx]! | (1 << (bitPos & 7))) & 0xff;
-  }
-  return out;
+  return sequenceReadValuesScratch;
 }
 
 function findLengthCode(
@@ -297,6 +283,15 @@ function buildStatePath(
   const { tableSize, wordCount, statesBySymbol, symbolMasks, minNextByState, maxNextByState, baselineByState } = pre;
   if (tableSize <= 0) return null;
   const rowCount = codes.length;
+  if (rowCount === 1) {
+    const onlyCode = codes[0] ?? -1;
+    if (onlyCode < 0 || onlyCode >= statesBySymbol.length) return null;
+    const onlyStates = statesBySymbol[onlyCode];
+    if (!onlyStates || onlyStates.length === 0) return null;
+    const firstState = onlyStates[0];
+    if (firstState === undefined) return null;
+    return { states: [firstState], updateBits: [] };
+  }
   const masks = getPathMasksScratch(rowCount * wordCount);
   const nextChoice = getPathNextChoiceScratch(Math.max(0, rowCount - 1) * tableSize);
   const maskOffset = (rowIndex: number) => rowIndex * wordCount;
@@ -307,7 +302,7 @@ function buildStatePath(
   if (!lastMask) return null;
   const lastMaskOffset = maskOffset(rowCount - 1);
   for (let wi = 0; wi < wordCount; wi++) {
-    masks[lastMaskOffset + wi] = lastMask[wi] ?? 0;
+    masks[lastMaskOffset + wi] = lastMask[wi]!;
   }
   if (isMaskEmpty(masks, lastMaskOffset, wordCount)) return null;
 
@@ -343,8 +338,7 @@ function buildStatePath(
   if (state < 0) return null;
   states[0] = state;
   for (let i = 0; i < rowCount - 1; i++) {
-    const nextState = nextChoice[nextChoiceOffset(i) + state] ?? -1;
-    if (nextState < 0) return null;
+    const nextState = nextChoice[nextChoiceOffset(i) + state]!;
     states[i + 1] = nextState;
     updateBits[i] = nextState - baselineByState[state]!;
     state = nextState;
@@ -572,36 +566,48 @@ function buildSequenceSection(
   if (!llChoice || !ofChoice || !mlChoice) return null;
 
   const chunkCount = numSequences * 6;
-  const readCounts = new Uint8Array(chunkCount);
-  const readValues = new Uint32Array(chunkCount);
+  const readCounts = getSequenceReadCountsScratch(chunkCount).subarray(0, chunkCount);
+  const readValues = getSequenceReadValuesScratch(chunkCount).subarray(0, chunkCount);
+  const llStates = llChoice.path.states;
+  const llUpdates = llChoice.path.updateBits;
+  const ofStates = ofChoice.path.states;
+  const ofUpdates = ofChoice.path.updateBits;
+  const mlStates = mlChoice.path.states;
+  const mlUpdates = mlChoice.path.updateBits;
+  const ofExtraN = encoded.ofExtraN;
+  const ofExtraValue = encoded.ofExtraValue;
+  const mlExtraN = encoded.mlExtraN;
+  const mlExtraValue = encoded.mlExtraValue;
+  const llExtraN = encoded.llExtraN;
+  const llExtraValue = encoded.llExtraValue;
   let readPos = 0;
   readCounts[readPos] = llChoice.tableLog;
-  readValues[readPos++] = llChoice.path.states[0] ?? 0;
+  readValues[readPos++] = llStates[0]!;
   readCounts[readPos] = ofChoice.tableLog;
-  readValues[readPos++] = ofChoice.path.states[0] ?? 0;
+  readValues[readPos++] = ofStates[0]!;
   readCounts[readPos] = mlChoice.tableLog;
-  readValues[readPos++] = mlChoice.path.states[0] ?? 0;
+  readValues[readPos++] = mlStates[0]!;
   for (let i = 0; i < numSequences; i++) {
-    readCounts[readPos] = encoded.ofExtraN[i] ?? 0;
-    readValues[readPos++] = encoded.ofExtraValue[i] ?? 0;
-    readCounts[readPos] = encoded.mlExtraN[i] ?? 0;
-    readValues[readPos++] = encoded.mlExtraValue[i] ?? 0;
-    readCounts[readPos] = encoded.llExtraN[i] ?? 0;
-    readValues[readPos++] = encoded.llExtraValue[i] ?? 0;
+    readCounts[readPos] = ofExtraN[i]!;
+    readValues[readPos++] = ofExtraValue[i]!;
+    readCounts[readPos] = mlExtraN[i]!;
+    readValues[readPos++] = mlExtraValue[i]!;
+    readCounts[readPos] = llExtraN[i]!;
+    readValues[readPos++] = llExtraValue[i]!;
     if (i !== numSequences - 1) {
-      const llState = llChoice.path.states[i] ?? 0;
-      const mlState = mlChoice.path.states[i] ?? 0;
-      const ofState = ofChoice.path.states[i] ?? 0;
+      const llState = llStates[i]!;
+      const mlState = mlStates[i]!;
+      const ofState = ofStates[i]!;
       const llRow = llChoice.table[llState];
       const mlRow = mlChoice.table[mlState];
       const ofRow = ofChoice.table[ofState];
       if (!llRow || !mlRow || !ofRow) return null;
       readCounts[readPos] = llRow.numBits;
-      readValues[readPos++] = llChoice.path.updateBits[i] ?? 0;
+      readValues[readPos++] = llUpdates[i]!;
       readCounts[readPos] = mlRow.numBits;
-      readValues[readPos++] = mlChoice.path.updateBits[i] ?? 0;
+      readValues[readPos++] = mlUpdates[i]!;
       readCounts[readPos] = ofRow.numBits;
-      readValues[readPos++] = ofChoice.path.updateBits[i] ?? 0;
+      readValues[readPos++] = ofUpdates[i]!;
     }
   }
 

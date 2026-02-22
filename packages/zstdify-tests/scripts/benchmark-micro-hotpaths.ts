@@ -61,6 +61,10 @@ async function main(): Promise<void> {
   bench.add('full compressed payload build', () => {
     buildCompressedBlockPayload(plan.literals, plan.sequences);
   });
+  const entropyContext = { prevTables: null, prevLiteralsTable: null };
+  bench.add('compressed payload build (reused entropy context)', () => {
+    buildCompressedBlockPayload(plan.literals, plan.sequences, entropyContext);
+  });
 
   await bench.run();
   console.log('Microbench results (median ms/op, lower is better):');

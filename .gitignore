@@ -15,6 +15,5 @@ packages/zstdify-tests/benchmarks/latest.json
 *.cpuprofile
 packages/zstdify-tests/benchmarks/benchmark.vl.json
 packages/zstdify-tests/benchmarks/benchmark-ratio.vl.json
-packages/zstdify-tests/benchmarks/latest.md
 packages/zstdify-tests/bench-data/files
 packages/zstdify-tests/bench-data/index.json

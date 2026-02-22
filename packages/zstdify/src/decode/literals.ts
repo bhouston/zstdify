@@ -240,6 +240,62 @@ function decodeHuffmanStreamToEndInto(
   return written;
 }
 
+function parseFourStreamJumpTable(
+  data: Uint8Array,
+  pos: number,
+  totalStreamsSize: number,
+): { stream1Size: number; stream2Size: number; stream3Size: number; stream4Size: number; streamOffset: number } {
+  if (totalStreamsSize < 10) {
+    throw new ZstdError('4-stream mode requires at least 10 bytes', 'corruption_detected');
+  }
+  const stream1Size = data[pos]! | (data[pos + 1]! << 8);
+  const stream2Size = data[pos + 2]! | (data[pos + 3]! << 8);
+  const stream3Size = data[pos + 4]! | (data[pos + 5]! << 8);
+  const stream4Size = totalStreamsSize - 6 - stream1Size - stream2Size - stream3Size;
+  if (stream4Size < 0) {
+    throw new ZstdError(
+      `Invalid jump table in 4-stream literals: total=${totalStreamsSize} s1=${stream1Size} s2=${stream2Size} s3=${stream3Size}`,
+      'corruption_detected',
+    );
+  }
+  return {
+    stream1Size,
+    stream2Size,
+    stream3Size,
+    stream4Size,
+    streamOffset: pos + 6,
+  };
+}
+
+function decodeFourHuffmanStreamsInto(
+  data: Uint8Array,
+  streamOffset: number,
+  stream1Size: number,
+  stream2Size: number,
+  stream3Size: number,
+  stream4Size: number,
+  table: ReturnType<typeof buildHuffmanDecodeTable>,
+  maxNumBits: number,
+  out: Uint8Array,
+): void {
+  let outPos = 0;
+  let pos = streamOffset;
+
+  const decodeOne = (size: number): void => {
+    const written = decodeHuffmanStreamToEndInto(data, pos, size, table, maxNumBits, out, outPos);
+    outPos += written;
+    pos += size;
+  };
+
+  decodeOne(stream1Size);
+  decodeOne(stream2Size);
+  decodeOne(stream3Size);
+  decodeOne(stream4Size);
+  if (outPos !== out.length) {
+    throw new ZstdError('Huffman literals size mismatch', 'corruption_detected');
+  }
+}
+
 /**
  * Decode compressed literals (Huffman). Requires Huffman table from tree description.
  */
@@ -288,7 +344,6 @@ export function decodeCompressedLiterals(
   }
 
   const result = new Uint8Array(regeneratedSize);
-  let outPos = 0;
 
   if (numStreams === 1) {
     decodeHuffmanStreamByCountInto(
@@ -302,46 +357,18 @@ export function decodeCompressedLiterals(
       regeneratedSize,
     );
   } else {
-    if (totalStreamsSize < 10) {
-      throw new ZstdError('4-stream mode requires at least 10 bytes', 'corruption_detected');
-    }
-    const s1 = data[pos]! | (data[pos + 1]! << 8);
-    const s2 = data[pos + 2]! | (data[pos + 3]! << 8);
-    const s3 = data[pos + 4]! | (data[pos + 5]! << 8);
-    const stream1Size = s1;
-    const stream2Size = s2;
-    const stream3Size = s3;
-    const stream4Size = totalStreamsSize - 6 - stream1Size - stream2Size - stream3Size;
-    if (stream4Size < 0) {
-      throw new ZstdError(
-        `Invalid jump table in 4-stream literals: total=${totalStreamsSize} s1=${stream1Size} s2=${stream2Size} s3=${stream3Size}`,
-        'corruption_detected',
-      );
-    }
-
-    let streamOffset = pos + 6;
-
-    const decodeStream = (size: number) => {
-      const written = decodeHuffmanStreamToEndInto(
-        data,
-        streamOffset,
-        size,
-        huffmanTable.table,
-        huffmanTable.maxNumBits,
-        result,
-        outPos,
-      );
-      outPos += written;
-      streamOffset += size;
-    };
-
-    decodeStream(stream1Size);
-    decodeStream(stream2Size);
-    decodeStream(stream3Size);
-    decodeStream(stream4Size);
-    if (outPos !== regeneratedSize) {
-      throw new ZstdError('Huffman literals size mismatch', 'corruption_detected');
-    }
+    const jump = parseFourStreamJumpTable(data, pos, totalStreamsSize);
+    decodeFourHuffmanStreamsInto(
+      data,
+      jump.streamOffset,
+      jump.stream1Size,
+      jump.stream2Size,
+      jump.stream3Size,
+      jump.stream4Size,
+      huffmanTable.table,
+      huffmanTable.maxNumBits,
+      result,
+    );
   }
 
   return {
@@ -363,8 +390,7 @@ export function decodeTreelessLiterals(
   huffmanTable: { table: ReturnType<typeof buildHuffmanDecodeTable>; maxNumBits: number },
 ): { literals: Uint8Array; bytesRead: number } {
   const result = new Uint8Array(regeneratedSize);
-  let outPos = 0;
-  let pos = offset;
+  const pos = offset;
 
   if (numStreams === 1) {
     decodeHuffmanStreamByCountInto(
@@ -378,46 +404,18 @@ export function decodeTreelessLiterals(
       regeneratedSize,
     );
   } else {
-    if (compressedSize < 10) {
-      throw new ZstdError('4-stream mode requires at least 10 bytes', 'corruption_detected');
-    }
-    const s1 = data[pos]! | (data[pos + 1]! << 8);
-    const s2 = data[pos + 2]! | (data[pos + 3]! << 8);
-    const s3 = data[pos + 4]! | (data[pos + 5]! << 8);
-    const stream1Size = s1;
-    const stream2Size = s2;
-    const stream3Size = s3;
-    const stream4Size = compressedSize - 6 - stream1Size - stream2Size - stream3Size;
-    if (stream4Size < 0) {
-      throw new ZstdError(
-        `Invalid jump table in 4-stream literals: total=${compressedSize} s1=${stream1Size} s2=${stream2Size} s3=${stream3Size}`,
-        'corruption_detected',
-      );
-    }
-
-    pos += 6;
-
-    const decodeStream = (size: number) => {
-      const written = decodeHuffmanStreamToEndInto(
-        data,
-        pos,
-        size,
-        huffmanTable.table,
-        huffmanTable.maxNumBits,
-        result,
-        outPos,
-      );
-      outPos += written;
-      pos += size;
-    };
-
-    decodeStream(stream1Size);
-    decodeStream(stream2Size);
-    decodeStream(stream3Size);
-    decodeStream(stream4Size);
-    if (outPos !== regeneratedSize) {
-      throw new ZstdError('Huffman literals size mismatch', 'corruption_detected');
-    }
+    const jump = parseFourStreamJumpTable(data, pos, compressedSize);
+    decodeFourHuffmanStreamsInto(
+      data,
+      jump.streamOffset,
+      jump.stream1Size,
+      jump.stream2Size,
+      jump.stream3Size,
+      jump.stream4Size,
+      huffmanTable.table,
+      huffmanTable.maxNumBits,
+      result,
+    );
   }
 
   return { literals: result, bytesRead: compressedSize };

@@ -19,6 +19,7 @@ function readU32LEBounded(data: Uint8Array, idx: number): number {
 
 export class BitReaderReverse {
   private readonly data: Uint8Array;
+  private readonly dataLength: number;
   private readonly startBit: number;
   private readonly endBit: number;
   private bitOffset: number;
@@ -28,6 +29,7 @@ export class BitReaderReverse {
       throw new RangeError(`BitReaderReverse: negative length ${lengthBytes}`);
     }
     this.data = data;
+    this.dataLength = data.length;
     this.startBit = startByteOffset * 8 + skipBitsAtStart;
     this.endBit = (startByteOffset + lengthBytes) * 8;
     this.bitOffset = this.endBit;
@@ -46,7 +48,11 @@ export class BitReaderReverse {
     if (requestedStart >= this.startBit) {
       const byteIndex = requestedStart >>> 3;
       const bitInByte = requestedStart & 7;
-      const hasEightBytes = byteIndex + 7 < this.data.length;
+      if (bitInByte + n <= 8) {
+        return ((this.data[byteIndex]! >>> bitInByte) & BIT_MASKS[n]!) >>> 0;
+      }
+
+      const hasEightBytes = byteIndex + 7 < this.dataLength;
       const word0 = hasEightBytes
         ? (this.data[byteIndex]! |
             (this.data[byteIndex + 1]! << 8) |

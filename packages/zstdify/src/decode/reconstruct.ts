@@ -239,7 +239,7 @@ export function executeSequencesInto(
   const matchLengthBySeq = sequences.matchLength;
 
   for (let seqIndex = 0; seqIndex < seqCount; seqIndex++) {
-    const seqLiteralsLength = literalsLengthBySeq[seqIndex] ?? 0;
+    const seqLiteralsLength = literalsLengthBySeq[seqIndex]!;
     if (seqLiteralsLength > 0) {
       const litOutStart = outPos;
       const litEnd = litPos + seqLiteralsLength;
@@ -259,7 +259,7 @@ export function executeSequencesInto(
         appendRangeToHistoryWindow(history, target, litOutStart, seqLiteralsLength);
       }
     }
-    const ov = offsetBySeq[seqIndex] ?? 0; // Offset_Value from sequence decode.
+    const ov = offsetBySeq[seqIndex]!; // Offset_Value from sequence decode.
     const ll0 = seqLiteralsLength === 0;
     let offset: number;
     let repeatIndex: 0 | 1 | 2 | null = null;
@@ -289,7 +289,7 @@ export function executeSequencesInto(
         'corruption_detected',
       );
     }
-    let remainingMatch = matchLengthBySeq[seqIndex] ?? 0;
+    let remainingMatch = matchLengthBySeq[seqIndex]!;
     const historyBytesNeeded = Math.max(0, offset - produced);
     if (historyBytesNeeded > 0) {
       if (historyCap === 0) {
@@ -398,7 +398,7 @@ export function executeSequences(
   // Sequence literals are slices of `literals`, so only matches expand output size.
   let totalSize = literals.length;
   for (let i = 0; i < packed.length; i++) {
-    totalSize += packed.matchLength[i] ?? 0;
+    totalSize += packed.matchLength[i]!;
   }
   const buffer = new Uint8Array(totalSize);
   const outSize = executeSequencesInto(literals, packed, windowSize, buffer, 0, repOffsets, historyInput);
