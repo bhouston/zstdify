@@ -67,6 +67,7 @@ interface PrecomputedPathTable {
   wordCount: number;
   statesBySymbol: number[][];
   symbolMasks: Uint32Array[];
+  avgBitsBySymbol: Float64Array;
   baselineByState: Int32Array;
   minNextByState: Int32Array;
   maxNextByState: Int32Array;
@@ -119,6 +120,15 @@ function findFirstSetBit(mask: Uint32Array, maskOffset: number, wordCount: numbe
     }
   }
   return -1;
+}
+
+function codesAreUniform(codes: ArrayLike<number>): number {
+  if (codes.length === 0) return -1;
+  const first = codes[0] ?? -1;
+  for (let i = 1; i < codes.length; i++) {
+    if ((codes[i] ?? -1) !== first) return -1;
+  }
+  return first;
 }
 
 function findFirstSetBitInRange(
@@ -178,6 +188,8 @@ function getPrecomputedPathTable(table: FSEDecodeTable): PrecomputedPathTable {
   }
   const statesBySymbol = Array.from({ length: maxSymbol + 1 }, () => [] as number[]);
   const symbolMasks = Array.from({ length: maxSymbol + 1 }, () => new Uint32Array(wordCount));
+  const bitTotalsBySymbol = new Float64Array(maxSymbol + 1);
+  const stateCountsBySymbol = new Uint32Array(maxSymbol + 1);
   for (let s = 0; s < tableSize; s++) {
     const sym = table.symbol[s]!;
     const stateList = statesBySymbol[sym];
@@ -185,12 +197,20 @@ function getPrecomputedPathTable(table: FSEDecodeTable): PrecomputedPathTable {
     if (!stateList || !stateMask) continue;
     stateList.push(s);
     stateMask[s >>> 5] = (stateMask[s >>> 5]! | (1 << (s & 31))) >>> 0;
+    bitTotalsBySymbol[sym] = (bitTotalsBySymbol[sym] ?? 0) + (table.numBits[s] ?? 0);
+    stateCountsBySymbol[sym] = (stateCountsBySymbol[sym] ?? 0) + 1;
+  }
+  const avgBitsBySymbol = new Float64Array(maxSymbol + 1);
+  for (let sym = 0; sym < avgBitsBySymbol.length; sym++) {
+    const count = stateCountsBySymbol[sym] ?? 0;
+    avgBitsBySymbol[sym] = count > 0 ? (bitTotalsBySymbol[sym] ?? 0) / count : Number.POSITIVE_INFINITY;
   }
   const precomputed = {
     tableSize,
     wordCount,
     statesBySymbol,
     symbolMasks,
+    avgBitsBySymbol,
     baselineByState,
     minNextByState,
     maxNextByState,
@@ -285,6 +305,38 @@ function buildStatePath(
     const firstState = onlyStates[0];
     if (firstState === undefined) return null;
     return { states: [firstState], updateBits: [] };
+  }
+  const uniformCode = codesAreUniform(codes);
+  if (uniformCode >= 0 && uniformCode < statesBySymbol.length) {
+    const candidateStates = statesBySymbol[uniformCode];
+    const candidateMask = symbolMasks[uniformCode];
+    if (!candidateStates || candidateStates.length === 0 || !candidateMask) return null;
+    for (let startIndex = 0; startIndex < candidateStates.length; startIndex++) {
+      const startState = candidateStates[startIndex];
+      if (startState === undefined) continue;
+      const states: number[] = new Array(rowCount);
+      const updateBits: number[] = new Array(rowCount - 1);
+      states[0] = startState;
+      let state = startState;
+      let valid = true;
+      for (let row = 0; row < rowCount - 1; row++) {
+        const nextState = findFirstSetBitInRange(
+          candidateMask,
+          0,
+          wordCount,
+          minNextByState[state]!,
+          maxNextByState[state]!,
+        );
+        if (nextState < 0) {
+          valid = false;
+          break;
+        }
+        states[row + 1] = nextState;
+        updateBits[row] = nextState - baselineByState[state]!;
+        state = nextState;
+      }
+      if (valid) return { states, updateBits };
+    }
   }
   const masks = getPathMasksScratch(rowCount * wordCount);
   const nextChoice = getPathNextChoiceScratch(Math.max(0, rowCount - 1) * tableSize);
@@ -426,10 +478,52 @@ function scorePath(path: { states: number[] }, table: FSEDecodeTable, tableLog: 
   return bits;
 }
 
-const normalizedTableCache = new Map<
-  string,
-  { table: FSEDecodeTable; tableLog: number; header: Uint8Array }
->();
+function estimatePathBitsFromHistogram(
+  histogram: Uint32Array,
+  table: FSEDecodeTable,
+  tableLog: number,
+  extraHeaderBits: number,
+): number {
+  const pre = getPrecomputedPathTable(table);
+  const avgBits = pre.avgBitsBySymbol;
+  let bits = tableLog + extraHeaderBits;
+  for (let sym = 0; sym < histogram.length; sym++) {
+    const freq = histogram[sym] ?? 0;
+    if (freq <= 0) continue;
+    const avg = avgBits[sym] ?? Number.POSITIVE_INFINITY;
+    if (!Number.isFinite(avg)) {
+      return Number.POSITIVE_INFINITY;
+    }
+    bits += avg * freq;
+  }
+  return bits;
+}
+
+interface NormalizedTableCacheEntry {
+  histogram: Uint32Array;
+  table: FSEDecodeTable;
+  tableLog: number;
+  header: Uint8Array;
+}
+
+const normalizedTableCache = new Map<string, NormalizedTableCacheEntry[]>();
+
+function hashHistogram(histogram: Uint32Array): number {
+  let hash = 2166136261 >>> 0;
+  for (let i = 0; i < histogram.length; i++) {
+    hash ^= histogram[i] ?? 0;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+function histogramsEqual(a: Uint32Array, b: Uint32Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return false;
+  }
+  return true;
+}
 
 function getNormalizedTableCandidates(
   codes: ArrayLike<number>,
@@ -449,20 +543,36 @@ function getNormalizedTableCandidates(
   const maxLogFromSamples = codes.length > 1 ? 31 - Math.clz32(codes.length - 1) : 5;
   const limit = Math.max(minTableLog, Math.min(maxTableLog, maxLogFromSamples + 1));
   const results: Array<{ table: FSEDecodeTable; tableLog: number; header: Uint8Array }> = [];
-  const histogramKey = Array.from(histogram).join(',');
+  const histogramHash = hashHistogram(histogram);
   for (let tableLog = minTableLog; tableLog <= limit; tableLog++) {
-    const key = `${tableLog}:${histogramKey}`;
-    const cached = normalizedTableCache.get(key);
-    if (cached) {
-      results.push(cached);
-      continue;
+    const key = `${tableLog}:${alphabetSize}:${histogramHash}`;
+    const cachedBucket = normalizedTableCache.get(key);
+    if (cachedBucket) {
+      let matched = false;
+      for (const cached of cachedBucket) {
+        if (histogramsEqual(cached.histogram, histogram)) {
+          results.push(cached);
+          matched = true;
+          break;
+        }
+      }
+      if (matched) continue;
     }
     try {
       const { normalizedCounter, maxSymbolValue } = normalizeCountsForTable(Array.from(histogram), tableLog);
       const header = writeNCount(normalizedCounter, maxSymbolValue, tableLog);
       const table = buildFSEDecodeTable(normalizedCounter, tableLog);
-      const out = { table, tableLog, header };
-      normalizedTableCache.set(key, out);
+      const out: NormalizedTableCacheEntry = {
+        histogram: histogram.slice(0),
+        table,
+        tableLog,
+        header,
+      };
+      if (!cachedBucket) {
+        normalizedTableCache.set(key, [out]);
+      } else {
+        cachedBucket.push(out);
+      }
       results.push(out);
     } catch {
       // Skip invalid normalizations for this table log.
@@ -517,6 +627,8 @@ function chooseStreamMode(
   prevTable: FSEDecodeTable | null,
   prevTableLog: number | null,
 ): StreamChoice | null {
+  const alphabetSize = symbolRange(codes);
+  const histogram = alphabetSize > 0 ? buildHistogram(codes, alphabetSize) : new Uint32Array(0);
   const predefinedPath = buildStatePath(codes, predefinedTable);
   if (!predefinedPath) return null;
   let best: StreamChoice = {
@@ -529,31 +641,51 @@ function chooseStreamMode(
   let bestScore = scorePath(predefinedPath, predefinedTable, predefinedTableLog);
 
   if (prevTable && prevTableLog !== null) {
-    const repeatPath = buildStatePath(codes, prevTable);
-    if (repeatPath) {
-      const repeatScore = scorePath(repeatPath, prevTable, prevTableLog);
-      if (repeatScore < bestScore) {
-        best = { mode: 3, table: prevTable, tableLog: prevTableLog, path: repeatPath, tableHeader: new Uint8Array(0) };
-        bestScore = repeatScore;
+    const repeatEstimate = estimatePathBitsFromHistogram(histogram, prevTable, prevTableLog, 0);
+    if (repeatEstimate < bestScore + 16) {
+      const repeatPath = buildStatePath(codes, prevTable);
+      if (repeatPath) {
+        const repeatScore = scorePath(repeatPath, prevTable, prevTableLog);
+        if (repeatScore < bestScore) {
+          best = { mode: 3, table: prevTable, tableLog: prevTableLog, path: repeatPath, tableHeader: new Uint8Array(0) };
+          bestScore = repeatScore;
+        }
       }
     }
   }
 
   const compressedCandidates = getNormalizedTableCandidates(codes, maxTableLog);
-  for (const compressed of compressedCandidates) {
-    const compressedPath = buildStatePath(codes, compressed.table);
-    if (compressedPath) {
-      const compressedScore =
-        scorePath(compressedPath, compressed.table, compressed.tableLog) + compressed.header.length * 8;
-      if (compressedScore < bestScore) {
-        best = {
-          mode: 2,
-          table: compressed.table,
-          tableLog: compressed.tableLog,
-          path: compressedPath,
-          tableHeader: compressed.header,
-        };
-        bestScore = compressedScore;
+  if (compressedCandidates.length > 0) {
+    const ranked = compressedCandidates
+      .map((compressed) => ({
+        compressed,
+        estimate: estimatePathBitsFromHistogram(
+          histogram,
+          compressed.table,
+          compressed.tableLog,
+          compressed.header.length * 8,
+        ),
+      }))
+      .sort((a, b) => a.estimate - b.estimate);
+    const evalCount = Math.min(2, ranked.length);
+    for (let i = 0; i < evalCount; i++) {
+      const candidate = ranked[i];
+      if (!candidate || candidate.estimate >= bestScore + 16) continue;
+      const compressedPath = buildStatePath(codes, candidate.compressed.table);
+      if (compressedPath) {
+        const compressedScore =
+          scorePath(compressedPath, candidate.compressed.table, candidate.compressed.tableLog) +
+          candidate.compressed.header.length * 8;
+        if (compressedScore < bestScore) {
+          best = {
+            mode: 2,
+            table: candidate.compressed.table,
+            tableLog: candidate.compressed.tableLog,
+            path: compressedPath,
+            tableHeader: candidate.compressed.header,
+          };
+          bestScore = compressedScore;
+        }
       }
     }
   }

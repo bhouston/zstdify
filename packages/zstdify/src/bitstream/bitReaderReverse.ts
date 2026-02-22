@@ -17,6 +17,10 @@ function readU32LEBounded(data: Uint8Array, idx: number): number {
   );
 }
 
+function readU32LEFast(data: Uint8Array, idx: number): number {
+  return (data[idx]! | (data[idx + 1]! << 8) | (data[idx + 2]! << 16) | (data[idx + 3]! << 24)) >>> 0;
+}
+
 export class BitReaderReverse {
   private readonly data: Uint8Array;
   private readonly dataLength: number;
@@ -53,13 +57,7 @@ export class BitReaderReverse {
       }
 
       const hasEightBytes = byteIndex + 7 < this.dataLength;
-      const word0 = hasEightBytes
-        ? (this.data[byteIndex]! |
-            (this.data[byteIndex + 1]! << 8) |
-            (this.data[byteIndex + 2]! << 16) |
-            (this.data[byteIndex + 3]! << 24)) >>>
-          0
-        : readU32LEBounded(this.data, byteIndex);
+      const word0 = hasEightBytes ? readU32LEFast(this.data, byteIndex) : readU32LEBounded(this.data, byteIndex);
       if (bitInByte + n <= 32) {
         const value = word0 >>> bitInByte;
         return n === 32 ? value >>> 0 : (value & BIT_MASKS[n]!) >>> 0;
@@ -67,13 +65,7 @@ export class BitReaderReverse {
 
       const low = word0 >>> bitInByte;
       const highBits = n - (32 - bitInByte);
-      const word1 = hasEightBytes
-        ? (this.data[byteIndex + 4]! |
-            (this.data[byteIndex + 5]! << 8) |
-            (this.data[byteIndex + 6]! << 16) |
-            (this.data[byteIndex + 7]! << 24)) >>>
-          0
-        : readU32LEBounded(this.data, byteIndex + 4);
+      const word1 = hasEightBytes ? readU32LEFast(this.data, byteIndex + 4) : readU32LEBounded(this.data, byteIndex + 4);
       const high = ((word1 & BIT_MASKS[highBits]!) << (32 - bitInByte)) >>> 0;
       const merged = (low | high) >>> 0;
       return n === 32 ? merged : (merged & BIT_MASKS[n]!) >>> 0;
@@ -108,7 +100,8 @@ export class BitReaderReverse {
     this.bitOffset = requestedStart;
     const byteIndex = requestedStart >>> 3;
     const bitInByte = requestedStart & 7;
-    const word = byteIndex + 3 < this.dataLength ? readU32LEBounded(this.data, byteIndex) : readU32LEBounded(this.data, byteIndex);
+    const word =
+      byteIndex + 3 < this.dataLength ? readU32LEFast(this.data, byteIndex) : readU32LEBounded(this.data, byteIndex);
     return ((word >>> bitInByte) & BIT_MASKS[n]!) >>> 0;
   }
 

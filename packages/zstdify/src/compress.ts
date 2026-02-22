@@ -12,6 +12,7 @@ import {
 } from './encode/compressedBlock.js';
 import { writeFrameHeader } from './encode/frameWriter.js';
 import { buildGreedySequences } from './encode/greedySequences.js';
+import { createSequencePlannerState } from './encode/sequencePlanner.js';
 import { ZstdError } from './errors.js';
 import { computeContentChecksum32 } from './frame/checksum.js';
 
@@ -81,13 +82,14 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   let history: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
   let repOffsets: [number, number, number] = [1, 4, 8];
   const sequenceEntropyContext: SequenceEntropyContext = { prevTables: null };
+  const sequencePlannerState = createSequencePlannerState();
   while (offset < input.length || blockIndex < blockCount) {
     const size = Math.min(BLOCK_MAX, input.length - offset);
     const last = blockIndex === blockCount - 1;
     const block = input.subarray(offset, offset + size);
     if (level > 0 && size > 0) {
       if (strategy) {
-        const plan = buildGreedySequences(block, { strategy, history, repOffsets });
+        const plan = buildGreedySequences(block, { strategy, history, repOffsets, plannerState: sequencePlannerState });
         if (plan.sequences.length > 0) {
           const payload = buildCompressedBlockPayload(plan.literals, plan.sequences, sequenceEntropyContext);
           if (payload) {

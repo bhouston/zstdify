@@ -15,10 +15,27 @@ export interface GreedyEncodeResult {
 export interface SequencePlannerOptions {
   history?: Uint8Array;
   repOffsets?: [number, number, number];
+  plannerState?: SequencePlannerState;
   chainLimit: number;
   repScoreBonus?: [number, number, number];
   lazyDepth?: number;
   searchWindow?: number;
+}
+
+export interface SequencePlannerState {
+  historyBytes: Uint8Array;
+  historyChainPrev: Int32Array;
+  historyHeads: Int32Array;
+}
+
+export function createSequencePlannerState(): SequencePlannerState {
+  const historyHeads = new Int32Array(HASH_SIZE);
+  historyHeads.fill(-1);
+  return {
+    historyBytes: new Uint8Array(0),
+    historyChainPrev: new Int32Array(0),
+    historyHeads,
+  };
 }
 
 interface MatchCandidate {
@@ -42,18 +59,61 @@ function hash3(data: Uint8Array, pos: number): number {
   return ((a * 2654435761 + b * 2246822519 + c * 3266489917) >>> 0) >>> (32 - HASH_BITS);
 }
 
-function buildChainPrev(data: Uint8Array): Int32Array {
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return false;
+  }
+  return true;
+}
+
+function buildChainPrev(data: Uint8Array, historyLength: number, plannerState?: SequencePlannerState): Int32Array {
   const heads = new Int32Array(HASH_SIZE);
   heads.fill(-1);
   const chainPrev = new Int32Array(data.length);
   chainPrev.fill(-1);
-  for (let pos = 0; pos + MIN_MATCH <= data.length; pos++) {
+  let startPos = 0;
+  if (
+    plannerState &&
+    historyLength > 0 &&
+    plannerState.historyBytes.length === historyLength &&
+    plannerState.historyChainPrev.length === historyLength &&
+    bytesEqual(data.subarray(0, historyLength), plannerState.historyBytes)
+  ) {
+    chainPrev.set(plannerState.historyChainPrev, 0);
+    heads.set(plannerState.historyHeads);
+    startPos = historyLength;
+  }
+  for (let pos = startPos; pos + MIN_MATCH <= data.length; pos++) {
     const h = hash3(data, pos);
     const prev = heads[h]!;
     chainPrev[pos] = prev;
     heads[h] = pos;
   }
   return chainPrev;
+}
+
+function updatePlannerState(plannerState: SequencePlannerState | undefined, combined: Uint8Array, chainPrev: Int32Array): void {
+  if (!plannerState) return;
+  const historyStart = Math.max(0, combined.length - WINDOW_SIZE);
+  const historyLength = combined.length - historyStart;
+  const historyBytes = new Uint8Array(historyLength);
+  historyBytes.set(combined.subarray(historyStart), 0);
+  const historyChainPrev = new Int32Array(historyLength);
+  for (let pos = 0; pos < historyLength; pos++) {
+    const globalPos = historyStart + pos;
+    const prev = chainPrev[globalPos] ?? -1;
+    historyChainPrev[pos] = prev >= historyStart ? prev - historyStart : -1;
+  }
+  const historyHeads = new Int32Array(HASH_SIZE);
+  historyHeads.fill(-1);
+  for (let pos = 0; pos + MIN_MATCH <= historyLength; pos++) {
+    const h = hash3(historyBytes, pos);
+    historyHeads[h] = pos;
+  }
+  plannerState.historyBytes = historyBytes;
+  plannerState.historyChainPrev = historyChainPrev;
+  plannerState.historyHeads = historyHeads;
 }
 
 function longestMatch(data: Uint8Array, pos: number, candidate: number, maxLength: number): number {
@@ -114,6 +174,7 @@ function findBestMatchAt(parse: ParseState, pos: number, repOffsets: [number, nu
         const score = scoreMatch(length, offset, repOffsets, parse.options.repScoreBonus);
         if (!best || score > best.score || (score === best.score && length > best.length)) {
           best = { pos, offset, length, score };
+          if (length >= maxLength) break;
         }
       }
     }
@@ -176,14 +237,24 @@ function pickMatch(parse: ParseState, pos: number): MatchCandidate | null {
   const direct = findBestMatchAt(parse, pos, parse.repOffsets);
   if (parse.options.searchWindow <= 1) return direct;
   let best = direct;
+  let bestScore = best?.score ?? 0;
   const end = Math.min(parse.input.length - MIN_MATCH, pos + parse.options.searchWindow - 1);
+  const maxRepBonus = Math.max(...parse.options.repScoreBonus);
   for (let probePos = pos + 1; probePos <= end; probePos++) {
+    const delayed = probePos - pos;
+    const maxProbeLength = parse.input.length - probePos;
+    const theoreticalBestDelayedScore = maxProbeLength * 16 + maxRepBonus - delayed * 8;
+    if (theoreticalBestDelayedScore <= bestScore) {
+      break;
+    }
+    const probeCandidate = parse.chainPrev[probePos] ?? -1;
+    if (probeCandidate < 0 || probeCandidate < Math.max(0, probePos - WINDOW_SIZE)) continue;
     const probe = findBestMatchAt(parse, probePos, parse.repOffsets);
     if (!probe) continue;
-    const delayedScore = probe.score - (probePos - pos) * 8;
-    const currentScore = best ? best.score : 0;
-    if (!best || delayedScore > currentScore) {
+    const delayedScore = probe.score - delayed * 8;
+    if (!best || delayedScore > bestScore) {
       best = { ...probe, score: delayedScore };
+      bestScore = delayedScore;
     }
   }
   return best;
@@ -210,7 +281,7 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
 
   const parse: ParseState = {
     input: combined,
-    chainPrev: buildChainPrev(combined),
+    chainPrev: buildChainPrev(combined, historyLength, options.plannerState),
     repOffsets: options.repOffsets ? [options.repOffsets[0], options.repOffsets[1], options.repOffsets[2]] : [1, 4, 8],
     options: {
       chainLimit: Math.max(1, options.chainLimit),
@@ -258,6 +329,7 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
 
   const trailingLiterals = combined.length - anchor;
   literalOut = copyLiterals(literals, literalOut, combined, anchor, combined.length);
+  updatePlannerState(options.plannerState, combined, parse.chainPrev);
   return {
     literals: literalOut < literals.length ? literals.subarray(0, literalOut) : literals,
     sequences,

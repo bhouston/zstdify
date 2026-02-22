@@ -37,7 +37,19 @@ function parseTurns(argv: string[]): number {
     }
     return Math.floor(parsed);
   }
-  return process.env.BENCH_PROFILE_DATASET ? 5 : 1;
+  return process.env.BENCH_PROFILE_DATASET ? 2000 : 10000;
+}
+
+function resolveProgressEveryTurns(turns: number): number {
+  const envValue = process.env.BENCH_PROFILE_PROGRESS_EVERY;
+  if (envValue) {
+    const parsed = Number(envValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(`Invalid BENCH_PROFILE_PROGRESS_EVERY value: ${envValue}`);
+    }
+    return Math.max(1, Math.floor(parsed));
+  }
+  return Math.max(1, Math.floor(turns / 20));
 }
 
 function main(): void {
@@ -61,6 +73,14 @@ function main(): void {
     throw new Error('Local benchmark corpus is empty.');
   }
 
+  const progressEveryTurns = resolveProgressEveryTurns(turns);
+  const startedAt = Date.now();
+  console.log(
+    `[decode-profile] starting turns=${turns} payloads=${prepared.length} mode=${
+      process.env.BENCH_PROFILE_DATASET ? 'single-payload' : 'full-corpus'
+    } progressEveryTurns=${progressEveryTurns}`,
+  );
+
   let checksum = 0;
   let totalDecodedBytes = 0;
   const started = performance.now();
@@ -75,6 +95,19 @@ function main(): void {
     checksum = (checksum + a[0]! + b[0]!) | 0;
     p.turns++;
     totalDecodedBytes += p.bytes * 2;
+
+    const completedTurns = i + 1;
+    if (completedTurns === turns || completedTurns % progressEveryTurns === 0) {
+      const elapsedMs = performance.now() - started;
+      const pct = ((completedTurns / turns) * 100).toFixed(1);
+      const etaMs = completedTurns === 0 ? 0 : (elapsedMs / completedTurns) * (turns - completedTurns);
+      const wallElapsedMs = Date.now() - startedAt;
+      console.log(
+        `[decode-profile] progress ${completedTurns}/${turns} (${pct}%) elapsed=${wallElapsedMs}ms eta=${Math.round(
+          etaMs,
+        )}ms`,
+      );
+    }
   }
   const elapsedMs = performance.now() - started;
 

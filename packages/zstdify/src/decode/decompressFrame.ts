@@ -25,7 +25,7 @@ import {
   executeSequencesIntoFast,
   getOrCreateHistoryWindow,
 } from './reconstruct.js';
-import { decodeAndExecuteSequencesInto } from './fusedSequences.js';
+import { decodeAndExecuteSequencesInto, shouldUseFusedSequencePath } from './fusedSequences.js';
 import { decodeSequences, type SequenceTables } from './sequences.js';
 
 export function decompressFrame(
@@ -172,7 +172,11 @@ export function decompressFrame(
           appendToHistoryWindow(history, literals);
         }
       } else {
-        if (useFastPath && useFusedSequences) {
+        const canUseFusedPath =
+          useFastPath &&
+          useFusedSequences &&
+          shouldUseFusedSequencePath(seqSectionSize, literals.length, header.windowSize, !block.lastBlock);
+        if (canUseFusedPath) {
           const start = totalSize;
           const { written, seqResult } = decodeAndExecuteSequencesInto(
             blockContent,

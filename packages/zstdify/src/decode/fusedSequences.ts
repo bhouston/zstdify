@@ -7,6 +7,25 @@ export interface FusedDecodeExecuteResult {
   seqResult: DecodeSequencesResult;
 }
 
+export function shouldUseFusedSequencePath(
+  seqSize: number,
+  literalsLength: number,
+  windowSize: number,
+  updateHistory: boolean,
+): boolean {
+  if (seqSize < 4) {
+    return false;
+  }
+  if (literalsLength === 0) {
+    return false;
+  }
+  // For very large windows with history tracking enabled, the non-fused route can be more stable.
+  if (updateHistory && windowSize > 8 * 1024 * 1024) {
+    return false;
+  }
+  return true;
+}
+
 export function decodeAndExecuteSequencesInto(
   blockContent: Uint8Array,
   seqOffset: number,
