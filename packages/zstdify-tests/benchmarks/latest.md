@@ -1,16 +1,16 @@
 # zstdify vs Node built-in zstd vs zstddec
 
-Generated: 2026-02-22T02:05:18.061Z | Node: v24.12.0
+Generated: 2026-02-22T02:29:17.744Z | Node: v24.12.0
 
 ## Throughput (MB/s)
 
 | Payload     | Level | Compress zstdify | Compress Node | Decompress zstdify | Decompress Node | Decompress fzstd | Decompress zstddec |
 |-------------|----------|-------|------------------|---------------|-------------------|------------------|---------------------|
-| war-and-peace-txt | text     | 6 | 2.91 | 160.53 | 156.79 | 896.03 | 253.03 | 912.87 |
-| shakespeare-complete-txt | text     | 6 | 2.23 | 131.71 | 125.33 | 717.70 | 226.44 | 755.69 |
-| enwik8      | text     | 6 | 2.43 | 116.30 | 141.48 | 1085.58 | 243.38 | 987.51 |
-| linux-kernel-tar | archive  | 6 | 3.98 | 169.25 | 231.23 | 1697.12 | 328.43 | 1482.26 |
-| apollo17-flightplan-pdf | document | 6 | 7.07 | 273.99 | 462.91 | 2968.68 | 498.58 | 2303.78 |
+| war-and-peace-txt | text     | 6 | 3.11 | 160.21 | 160.31 | 887.31 | 259.15 | 930.36 |
+| shakespeare-complete-txt | text     | 6 | 2.32 | 136.51 | 127.49 | 711.41 | 230.97 | 770.05 |
+| enwik8      | text     | 6 | 2.56 | 120.13 | 146.31 | 1115.21 | 248.84 | 1014.34 |
+| linux-kernel-tar | archive  | 6 | 4.15 | 181.87 | 237.53 | 1743.03 | 339.65 | 1530.44 |
+| apollo17-flightplan-pdf | document | 6 | 7.29 | 277.22 | 499.54 | 3113.49 | 506.26 | 2370.65 |
 
 ## Compression ratio (compressed/original)
 

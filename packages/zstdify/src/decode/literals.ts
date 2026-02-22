@@ -205,45 +205,41 @@ function decodeHuffmanStreamToEndInto(
   const paddingBits = 8 - highestSetBit;
   let bitOffset = streamLength * 8 - paddingBits;
   const streamBits = streamLength * 8;
-
-  const readBitsZeroExtended = (numBits: number): number => {
-    if (numBits <= 0) return 0;
-    bitOffset -= numBits;
-    if (bitOffset >= 0) {
-      const byteIndex = bitOffset >>> 3;
-      const bitInByte = bitOffset & 7;
-      const word0 =
-        (stream[byteIndex] ?? 0) |
-        ((stream[byteIndex + 1] ?? 0) << 8) |
-        ((stream[byteIndex + 2] ?? 0) << 16) |
-        ((stream[byteIndex + 3] ?? 0) << 24);
-      if (bitInByte + numBits <= 32) {
-        return (word0 >>> bitInByte) & ((1 << numBits) - 1);
-      }
+  const mask = (1 << maxNumBits) - 1;
+  let nextBitOffset = bitOffset - maxNumBits;
+  let state = 0;
+  if (nextBitOffset >= 0) {
+    const byteIndex = nextBitOffset >>> 3;
+    const bitInByte = nextBitOffset & 7;
+    const word0 =
+      (stream[byteIndex] ?? 0) |
+      ((stream[byteIndex + 1] ?? 0) << 8) |
+      ((stream[byteIndex + 2] ?? 0) << 16) |
+      ((stream[byteIndex + 3] ?? 0) << 24);
+    if (bitInByte + maxNumBits <= 32) {
+      state = (word0 >>> bitInByte) & ((1 << maxNumBits) - 1);
+    } else {
       const low = word0 >>> bitInByte;
-      const highBits = numBits - (32 - bitInByte);
+      const highBits = maxNumBits - (32 - bitInByte);
       const word1 =
         (stream[byteIndex + 4] ?? 0) |
         ((stream[byteIndex + 5] ?? 0) << 8) |
         ((stream[byteIndex + 6] ?? 0) << 16) |
         ((stream[byteIndex + 7] ?? 0) << 24);
       const high = (word1 & ((1 << highBits) - 1)) << (32 - bitInByte);
-      return (low | high) >>> 0;
+      state = (low | high) >>> 0;
     }
-
-    let value = 0;
-    for (let i = 0; i < numBits; i++) {
-      const abs = bitOffset + i;
+  } else {
+    for (let i = 0; i < maxNumBits; i++) {
+      const abs = nextBitOffset + i;
       if (abs < 0 || abs >= streamBits) continue;
       const byteIndex = abs >>> 3;
       const bitInByte = abs & 7;
-      value |= ((stream[byteIndex]! >>> bitInByte) & 1) << i;
+      state |= ((stream[byteIndex]! >>> bitInByte) & 1) << i;
     }
-    return value >>> 0;
-  };
-
-  const mask = (1 << maxNumBits) - 1;
-  let state = readBitsZeroExtended(maxNumBits);
+    state >>>= 0;
+  }
+  bitOffset = nextBitOffset;
   let written = 0;
   while (bitOffset > -maxNumBits) {
     if (state < 0 || state >= table.length) {
@@ -258,7 +254,42 @@ function decodeHuffmanStreamToEndInto(
     }
     out[outOffset + written] = table.symbol[state]!;
     written++;
-    const rest = readBitsZeroExtended(numBits);
+    let rest = 0;
+    nextBitOffset = bitOffset - numBits;
+    if (numBits > 0) {
+      if (nextBitOffset >= 0) {
+        const byteIndex = nextBitOffset >>> 3;
+        const bitInByte = nextBitOffset & 7;
+        const word0 =
+          (stream[byteIndex] ?? 0) |
+          ((stream[byteIndex + 1] ?? 0) << 8) |
+          ((stream[byteIndex + 2] ?? 0) << 16) |
+          ((stream[byteIndex + 3] ?? 0) << 24);
+        if (bitInByte + numBits <= 32) {
+          rest = (word0 >>> bitInByte) & ((1 << numBits) - 1);
+        } else {
+          const low = word0 >>> bitInByte;
+          const highBits = numBits - (32 - bitInByte);
+          const word1 =
+            (stream[byteIndex + 4] ?? 0) |
+            ((stream[byteIndex + 5] ?? 0) << 8) |
+            ((stream[byteIndex + 6] ?? 0) << 16) |
+            ((stream[byteIndex + 7] ?? 0) << 24);
+          const high = (word1 & ((1 << highBits) - 1)) << (32 - bitInByte);
+          rest = (low | high) >>> 0;
+        }
+      } else {
+        for (let i = 0; i < numBits; i++) {
+          const abs = nextBitOffset + i;
+          if (abs < 0 || abs >= streamBits) continue;
+          const byteIndex = abs >>> 3;
+          const bitInByte = abs & 7;
+          rest |= ((stream[byteIndex]! >>> bitInByte) & 1) << i;
+        }
+        rest >>>= 0;
+      }
+    }
+    bitOffset = nextBitOffset;
     state = ((state << numBits) & mask) + rest;
   }
   if (bitOffset !== -maxNumBits) {

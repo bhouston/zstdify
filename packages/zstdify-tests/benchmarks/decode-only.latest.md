@@ -1,13 +1,13 @@
 # Decode-only benchmark
 
-Generated: 2026-02-22T01:22:13.537Z | Node: v24.12.0
+Generated: 2026-02-22T02:24:21.190Z | Node: v24.12.0
 
 ## Throughput (MB/s)
 
 | Payload | Category | Level | zstdify <- zstdify | zstdify <- node | node <- node | fzstd <- node | zstddec <- zstdify |
 |---|---|---:|---:|---:|---:|---:|---:|
-| war-and-peace-txt | text | 6 | 112.78 | 102.95 | 865.18 | 254.84 | 918.62 |
-| shakespeare-complete-txt | text | 6 | 87.26 | 78.81 | 722.69 | 224.91 | 756.46 |
-| enwik8 | text | 6 | 84.33 | 82.96 | 1077.17 | 237.66 | 975.50 |
-| linux-kernel-tar | archive | 6 | 134.31 | 130.63 | 1784.56 | 324.28 | 1468.29 |
-| apollo17-flightplan-pdf | document | 6 | 277.36 | 269.42 | 2886.91 | 495.80 | 2292.39 |
+| war-and-peace-txt | text | 6 | 129.51 | 115.25 | 726.30 | 224.35 | 776.63 |
+| shakespeare-complete-txt | text | 6 | 103.81 | 90.96 | 602.54 | 197.52 | 644.66 |
+| enwik8 | text | 6 | 112.36 | 100.96 | 895.58 | 207.49 | 833.36 |
+| linux-kernel-tar | archive | 6 | 188.70 | 182.81 | 1373.08 | 271.39 | 1260.69 |
+| apollo17-flightplan-pdf | document | 6 | 378.99 | 379.53 | 2266.19 | 435.93 | 1995.13 |

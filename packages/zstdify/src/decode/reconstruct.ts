@@ -400,6 +400,18 @@ export function executeSequencesIntoFast(
   updateHistory = false,
 ): number {
   const history = isHistoryWindow(historyInput) ? historyInput : createHistoryWindow(windowSize, historyInput);
+  if (history.length === 0) {
+    return executeSequencesIntoFastNoHistory(
+      literals,
+      sequences,
+      windowSize,
+      target,
+      targetOffset,
+      repOffsets,
+      history,
+      updateHistory,
+    );
+  }
   const historyLength = history.length;
   const historyCap = history.buffer.length;
   const historyOldestPos = historyCap > 0 ? (history.writePos - historyLength + historyCap) % historyCap : 0;
@@ -499,6 +511,131 @@ export function executeSequencesIntoFast(
           historyOldestPos,
           historyBuffer,
         );
+      }
+    }
+
+    if (isNonRepeat) {
+      repOffsets[2] = repOffsets[1];
+      repOffsets[1] = repOffsets[0];
+      repOffsets[0] = offset;
+    } else if (repeatIndex === 1) {
+      repOffsets[1] = repOffsets[0];
+      repOffsets[0] = offset;
+    } else if (repeatIndex === 2) {
+      repOffsets[2] = repOffsets[1];
+      repOffsets[1] = repOffsets[0];
+      repOffsets[0] = offset;
+    }
+  }
+
+  if (litPos < literals.length) {
+    const remaining = literals.length - litPos;
+    if (remaining <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
+      for (let i = 0; i < remaining; i++) {
+        target[outPos + i] = literals[litPos + i]!;
+      }
+      outPos += remaining;
+    } else {
+      target.set(literals.subarray(litPos), outPos);
+      outPos += remaining;
+    }
+  }
+
+  if (updateHistory && outPos > targetOffset) {
+    appendRangeToHistoryWindow(history, target, targetOffset, outPos - targetOffset);
+  }
+
+  return outPos - targetOffset;
+}
+
+function executeSequencesIntoFastNoHistory(
+  literals: Uint8Array,
+  sequences: PackedSequences,
+  windowSize: number,
+  target: Uint8Array,
+  targetOffset: number,
+  repOffsets: [number, number, number],
+  history: HistoryWindow,
+  updateHistory: boolean,
+): number {
+  let outPos = targetOffset;
+  let litPos = 0;
+  const seqCount = sequences.length;
+  const literalsLengthBySeq = sequences.literalsLength;
+  const offsetBySeq = sequences.offset;
+  const matchLengthBySeq = sequences.matchLength;
+
+  for (let seqIndex = 0; seqIndex < seqCount; seqIndex++) {
+    const seqLiteralsLength = literalsLengthBySeq[seqIndex]!;
+    if (seqLiteralsLength > 0) {
+      const litEnd = litPos + seqLiteralsLength;
+      if (litEnd > literals.length) {
+        throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
+      }
+      if (seqLiteralsLength <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
+        for (let i = 0; i < seqLiteralsLength; i++) {
+          target[outPos + i] = literals[litPos + i]!;
+        }
+      } else {
+        target.set(literals.subarray(litPos, litEnd), outPos);
+      }
+      outPos += seqLiteralsLength;
+      litPos = litEnd;
+    }
+
+    const ov = offsetBySeq[seqIndex]!;
+    const ll0 = seqLiteralsLength === 0;
+    let offset: number;
+    let repeatIndex: 0 | 1 | 2 | null = null;
+    const isNonRepeat = ov > 3 || (ov === 3 && ll0);
+    if (isNonRepeat) {
+      if (ov === 3) {
+        offset = repOffsets[0] - 1;
+        if (offset === 0) {
+          throw new ZstdError('Invalid match offset: repeat1-1 is 0', 'corruption_detected');
+        }
+      } else {
+        offset = ov - 3;
+      }
+    } else {
+      if (ll0) {
+        repeatIndex = ov === 1 ? 1 : 2;
+      } else {
+        repeatIndex = (ov - 1) as 0 | 1 | 2;
+      }
+      offset = repOffsets[repeatIndex]!;
+    }
+
+    const produced = outPos - targetOffset;
+    const maxReachBack = produced < windowSize ? produced : windowSize;
+    if (offset <= 0 || offset > maxReachBack) {
+      throw new ZstdError(
+        `Invalid match offset: offset=${offset} maxReachBack=${maxReachBack} produced=${produced} history=0 window=${windowSize}`,
+        'corruption_detected',
+      );
+    }
+
+    const remainingMatch = matchLengthBySeq[seqIndex]!;
+    if (remainingMatch > 0) {
+      const copyStart = outPos - offset;
+      if (offset >= remainingMatch) {
+        target.copyWithin(outPos, copyStart, copyStart + remainingMatch);
+        outPos += remainingMatch;
+      } else if (offset <= FAST_SMALL_OFFSET_LOOP_THRESHOLD) {
+        for (let i = 0; i < remainingMatch; i++) {
+          target[outPos + i] = target[outPos - offset + i]!;
+        }
+        outPos += remainingMatch;
+      } else {
+        let copied = offset;
+        target.copyWithin(outPos, copyStart, copyStart + copied);
+        outPos += copied;
+        while (copied < remainingMatch) {
+          const toCopy = Math.min(copied, remainingMatch - copied);
+          target.copyWithin(outPos, outPos - copied, outPos - copied + toCopy);
+          outPos += toCopy;
+          copied += toCopy;
+        }
       }
     }
 

@@ -259,14 +259,9 @@ export function decodeSequences(
   const llTableLength = llTable.length;
   const ofTableLength = ofTable.length;
   const mlTableLength = mlTable.length;
-  if (
-    stateOF < 0 ||
-    stateOF >= ofTableLength ||
-    stateML < 0 ||
-    stateML >= mlTableLength ||
-    stateLL < 0 ||
-    stateLL >= llTableLength
-  ) {
+  const hasInvalidState = (ll: number, of: number, ml: number): boolean =>
+    (of >>> 0) >= ofTableLength || (ml >>> 0) >= mlTableLength || (ll >>> 0) >= llTableLength;
+  if (hasInvalidState(stateLL, stateOF, stateML)) {
     throw new ZstdError('FSE invalid state', 'corruption_detected');
   }
   const llSymbolByState = llTable.symbol;
@@ -299,16 +294,14 @@ export function decodeSequences(
     }
     const mlNumBits = ML_NUMBITS[mlCode]!;
     const mlBase = ML_BASELINE[mlCode]!;
-    const matchLength =
-      mlCode <= 31 ? mlCode + 3 : mlBase + (mlNumBits > 0 ? reader.readBitsFast(mlNumBits) : 0);
+    const matchLength = mlBase + (mlNumBits > 0 ? reader.readBitsFast(mlNumBits) : 0);
 
     if (llCode >= LL_BASELINE.length) {
       throw new ZstdError('Invalid literals length code', 'corruption_detected');
     }
     const llNumBits = LL_NUMBITS[llCode]!;
     const llBase = LL_BASELINE[llCode]!;
-    const literalsLength =
-      llCode <= 15 ? llCode : llBase + (llNumBits > 0 ? reader.readBitsFast(llNumBits) : 0);
+    const literalsLength = llCode <= 15 ? llCode : llBase + (llNumBits > 0 ? reader.readBitsFast(llNumBits) : 0);
     sequenceLiteralsLength[i] = literalsLength;
     sequenceOffsets[i] = offsetValue;
     sequenceMatchLengths[i] = matchLength;
@@ -324,14 +317,7 @@ export function decodeSequences(
     stateLL = llBaselineByState[stateLL]! + (llBits > 0 ? reader.readBitsFast(llBits) : 0);
     stateML = mlBaselineByState[stateML]! + (mlBits > 0 ? reader.readBitsFast(mlBits) : 0);
     stateOF = ofBaselineByState[stateOF]! + (ofBits > 0 ? reader.readBitsFast(ofBits) : 0);
-    if (
-      stateOF < 0 ||
-      stateOF >= ofTableLength ||
-      stateML < 0 ||
-      stateML >= mlTableLength ||
-      stateLL < 0 ||
-      stateLL >= llTableLength
-    ) {
+    if (hasInvalidState(stateLL, stateOF, stateML)) {
       throw new ZstdError('FSE invalid state', 'corruption_detected');
     }
   }
@@ -344,7 +330,7 @@ export function decodeSequences(
   }
   const mlNumBits = ML_NUMBITS[mlCode]!;
   const mlBase = ML_BASELINE[mlCode]!;
-  const matchLength = mlCode <= 31 ? mlCode + 3 : mlBase + (mlNumBits > 0 ? reader.readBitsFast(mlNumBits) : 0);
+  const matchLength = mlBase + (mlNumBits > 0 ? reader.readBitsFast(mlNumBits) : 0);
   if (llCode >= LL_BASELINE.length) {
     throw new ZstdError('Invalid literals length code', 'corruption_detected');
   }

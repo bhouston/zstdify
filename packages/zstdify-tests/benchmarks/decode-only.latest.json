@@ -1,62 +1,62 @@
 {
   "version": 1,
   "nodeVersion": "v24.12.0",
-  "timestamp": "2026-02-22T01:22:13.537Z",
+  "timestamp": "2026-02-22T02:24:21.190Z",
   "rows": [
     {
       "payloadId": "war-and-peace-txt",
       "payloadCategory": "text",
       "payloadBytes": 30353,
       "level": 6,
-      "decodeZstdifyFromZstdifyMs": 0.2691250000000309,
-      "decodeZstdifyFromNodeMs": 0.2948340000000371,
-      "decodeNodeFromNodeMs": 0.035082999999985987,
-      "decodeFzstdFromNodeMs": 0.11910450000004857,
-      "decodeZstddecFromZstdifyMs": 0.03304200000002311
+      "decodeZstdifyFromZstdifyMs": 0.234375,
+      "decodeZstdifyFromNodeMs": 0.26337499999999636,
+      "decodeNodeFromNodeMs": 0.04179100000010294,
+      "decodeFzstdFromNodeMs": 0.135291000000052,
+      "decodeZstddecFromZstdifyMs": 0.03908300000011877
     },
     {
       "payloadId": "shakespeare-complete-txt",
       "payloadCategory": "text",
       "payloadBytes": 30353,
       "level": 6,
-      "decodeZstdifyFromZstdifyMs": 0.3478330000002643,
-      "decodeZstdifyFromNodeMs": 0.385124999999789,
-      "decodeNodeFromNodeMs": 0.042000000000371074,
-      "decodeFzstdFromNodeMs": 0.1349580000005517,
-      "decodeZstddecFromZstdifyMs": 0.04012499999953434
+      "decodeZstdifyFromZstdifyMs": 0.2923954999998841,
+      "decodeZstdifyFromNodeMs": 0.33370800000011513,
+      "decodeNodeFromNodeMs": 0.050375000000713044,
+      "decodeFzstdFromNodeMs": 0.15366699999958655,
+      "decodeZstddecFromZstdifyMs": 0.047083999999813386
     },
     {
       "payloadId": "enwik8",
       "payloadCategory": "text",
       "payloadBytes": 1048576,
       "level": 6,
-      "decodeZstdifyFromZstdifyMs": 12.4342915000002,
-      "decodeZstdifyFromNodeMs": 12.639165999999932,
-      "decodeNodeFromNodeMs": 0.9734580000003916,
-      "decodeFzstdFromNodeMs": 4.412062999998852,
-      "decodeZstddecFromZstdifyMs": 1.0749159999995754
+      "decodeZstdifyFromZstdifyMs": 9.332042000000001,
+      "decodeZstdifyFromNodeMs": 10.385832999998456,
+      "decodeNodeFromNodeMs": 1.1708340000004682,
+      "decodeFzstdFromNodeMs": 5.053583500000059,
+      "decodeZstddecFromZstdifyMs": 1.2582499999989523
     },
     {
       "payloadId": "linux-kernel-tar",
       "payloadCategory": "archive",
       "payloadBytes": 1048576,
       "level": 6,
-      "decodeZstdifyFromZstdifyMs": 7.806957999999213,
-      "decodeZstdifyFromNodeMs": 8.02691649999906,
-      "decodeNodeFromNodeMs": 0.5875839999989694,
-      "decodeFzstdFromNodeMs": 3.233541999999943,
-      "decodeZstddecFromZstdifyMs": 0.7141460000002553
+      "decodeZstdifyFromZstdifyMs": 5.556937499999549,
+      "decodeZstdifyFromNodeMs": 5.735916499999803,
+      "decodeNodeFromNodeMs": 0.7636670000010781,
+      "decodeFzstdFromNodeMs": 3.8636659999992844,
+      "decodeZstddecFromZstdifyMs": 0.8317500000011933
     },
     {
       "payloadId": "apollo17-flightplan-pdf",
       "payloadCategory": "document",
       "payloadBytes": 231435,
       "level": 6,
-      "decodeZstdifyFromZstdifyMs": 0.8344170000000304,
-      "decodeZstdifyFromNodeMs": 0.8589999999985594,
-      "decodeNodeFromNodeMs": 0.08016700000007404,
-      "decodeFzstdFromNodeMs": 0.46679199999925913,
-      "decodeZstddecFromZstdifyMs": 0.10095800000090094
+      "decodeZstdifyFromZstdifyMs": 0.6106670000008307,
+      "decodeZstdifyFromNodeMs": 0.6097920000001977,
+      "decodeNodeFromNodeMs": 0.10212500000034197,
+      "decodeFzstdFromNodeMs": 0.5308960000002116,
+      "decodeZstddecFromZstdifyMs": 0.11599999999998545
     }
   ],
   "throughput": [
@@ -65,55 +65,55 @@
       "payloadCategory": "text",
       "payloadBytes": 30353,
       "level": 6,
-      "decodeZstdifyFromZstdifyMbps": 112.78402229445986,
-      "decodeZstdifyFromNodeMbps": 102.94945630421246,
-      "decodeNodeFromNodeMbps": 865.1768662888613,
-      "decodeFzstdFromNodeMbps": 254.8434358062678,
-      "decodeZstddecFromZstdifyMbps": 918.6187276792801
+      "decodeZstdifyFromZstdifyMbps": 129.50613333333334,
+      "decodeZstdifyFromNodeMbps": 115.24632178452936,
+      "decodeNodeFromNodeMbps": 726.304706753254,
+      "decodeFzstdFromNodeMbps": 224.35343075288327,
+      "decodeZstddecFromZstdifyMbps": 776.6292249803689
     },
     {
       "payloadId": "shakespeare-complete-txt",
       "payloadCategory": "text",
       "payloadBytes": 30353,
       "level": 6,
-      "decodeZstdifyFromZstdifyMbps": 87.26314064501338,
-      "decodeZstdifyFromNodeMbps": 78.81337228176989,
-      "decodeNodeFromNodeMbps": 722.6904761840913,
-      "decodeFzstdFromNodeMbps": 224.90700810530626,
-      "decodeZstddecFromZstdifyMbps": 756.4610591988101
+      "decodeZstdifyFromZstdifyMbps": 103.8080271413617,
+      "decodeZstdifyFromNodeMbps": 90.95676459656205,
+      "decodeNodeFromNodeMbps": 602.5409429195109,
+      "decodeFzstdFromNodeMbps": 197.52451730092776,
+      "decodeZstddecFromZstdifyMbps": 644.6563588505713
     },
     {
       "payloadId": "enwik8",
       "payloadCategory": "text",
       "payloadBytes": 1048576,
       "level": 6,
-      "decodeZstdifyFromZstdifyMbps": 84.32937252596847,
-      "decodeZstdifyFromNodeMbps": 82.96243597085484,
-      "decodeNodeFromNodeMbps": 1077.1661437879993,
-      "decodeFzstdFromNodeMbps": 237.66115760365903,
-      "decodeZstddecFromZstdifyMbps": 975.4957596690477
+      "decodeZstdifyFromZstdifyMbps": 112.36297479158365,
+      "decodeZstdifyFromNodeMbps": 100.96214718647563,
+      "decodeNodeFromNodeMbps": 895.5804153275192,
+      "decodeFzstdFromNodeMbps": 207.49157503779006,
+      "decodeZstddecFromZstdifyMbps": 833.3606199092972
     },
     {
       "payloadId": "linux-kernel-tar",
       "payloadCategory": "archive",
       "payloadBytes": 1048576,
       "level": 6,
-      "decodeZstdifyFromZstdifyMbps": 134.31300642325803,
-      "decodeZstdifyFromNodeMbps": 130.6324788603597,
-      "decodeNodeFromNodeMbps": 1784.5550593648552,
-      "decodeFzstdFromNodeMbps": 324.2809278494043,
-      "decodeZstddecFromZstdifyMbps": 1468.2935982272884
+      "decodeZstdifyFromZstdifyMbps": 188.69674168552103,
+      "decodeZstdifyFromNodeMbps": 182.80879786169064,
+      "decodeNodeFromNodeMbps": 1373.0801514253196,
+      "decodeFzstdFromNodeMbps": 271.3940594244415,
+      "decodeZstddecFromZstdifyMbps": 1260.686504356472
     },
     {
       "payloadId": "apollo17-flightplan-pdf",
       "payloadCategory": "document",
       "payloadBytes": 231435,
       "level": 6,
-      "decodeZstdifyFromZstdifyMbps": 277.3613193403197,
-      "decodeZstdifyFromNodeMbps": 269.4237485452714,
-      "decodeNodeFromNodeMbps": 2886.911073132165,
-      "decodeFzstdFromNodeMbps": 495.79898541613255,
-      "decodeZstddecFromZstdifyMbps": 2292.3889141814884
+      "decodeZstdifyFromZstdifyMbps": 378.9872385435682,
+      "decodeZstdifyFromNodeMbps": 379.53105321146387,
+      "decodeNodeFromNodeMbps": 2266.193390445288,
+      "decodeFzstdFromNodeMbps": 435.93283806980605,
+      "decodeZstddecFromZstdifyMbps": 1995.129310345078
     }
   ]
 }
