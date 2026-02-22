@@ -281,7 +281,7 @@ export function decodeSequences(
     const mlCode = mlTable.symbol[stateML]!;
     const llCode = llTable.symbol[stateLL]!;
 
-    const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? reader.readBits(offsetCode) : 0);
+    const offsetValue = (1 << offsetCode) + (offsetCode > 0 ? reader.readBitsFast(offsetCode) : 0);
 
     if (mlCode >= ML_BASELINE.length) {
       throw new ZstdError('Invalid match length code', 'corruption_detected');
@@ -289,7 +289,7 @@ export function decodeSequences(
     const mlNumBits = ML_NUMBITS[mlCode]!;
     const mlBase = ML_BASELINE[mlCode]!;
     const matchLength =
-      mlCode <= 31 ? mlCode + 3 : mlBase + (mlNumBits > 0 ? reader.readBits(mlNumBits) : 0);
+      mlCode <= 31 ? mlCode + 3 : mlBase + (mlNumBits > 0 ? reader.readBitsFast(mlNumBits) : 0);
 
     if (llCode >= LL_BASELINE.length) {
       throw new ZstdError('Invalid literals length code', 'corruption_detected');
@@ -297,7 +297,7 @@ export function decodeSequences(
     const llNumBits = LL_NUMBITS[llCode]!;
     const llBase = LL_BASELINE[llCode]!;
     const literalsLength =
-      llCode <= 15 ? llCode : llBase + (llNumBits > 0 ? reader.readBits(llNumBits) : 0);
+      llCode <= 15 ? llCode : llBase + (llNumBits > 0 ? reader.readBitsFast(llNumBits) : 0);
     sequenceLiteralsLength[i] = literalsLength;
     sequenceOffsets[i] = offsetValue;
     sequenceMatchLengths[i] = matchLength;
@@ -311,9 +311,9 @@ export function decodeSequences(
       const llBits = llTable.numBits[stateLL]!;
       const mlBits = mlTable.numBits[stateML]!;
       const ofBits = ofTable.numBits[stateOF]!;
-      stateLL = llTable.baseline[stateLL]! + (llBits > 0 ? reader.readBits(llBits) : 0);
-      stateML = mlTable.baseline[stateML]! + (mlBits > 0 ? reader.readBits(mlBits) : 0);
-      stateOF = ofTable.baseline[stateOF]! + (ofBits > 0 ? reader.readBits(ofBits) : 0);
+      stateLL = llTable.baseline[stateLL]! + (llBits > 0 ? reader.readBitsFast(llBits) : 0);
+      stateML = mlTable.baseline[stateML]! + (mlBits > 0 ? reader.readBitsFast(mlBits) : 0);
+      stateOF = ofTable.baseline[stateOF]! + (ofBits > 0 ? reader.readBitsFast(ofBits) : 0);
     }
   }
 

@@ -22,8 +22,10 @@ import {
   appendToHistoryWindow,
   type DecoderReuseBag,
   executeSequencesInto,
+  executeSequencesIntoFast,
   getOrCreateHistoryWindow,
 } from './reconstruct.js';
+import { decodeAndExecuteSequencesInto } from './fusedSequences.js';
 import { decodeSequences, type SequenceTables } from './sequences.js';
 
 export function decompressFrame(
@@ -49,6 +51,9 @@ export function decompressFrame(
     maxNumBits: number;
   } | null = dictionary?.huffmanTable ?? null;
   let prevSeqTables: SequenceTables | null = dictionary?.sequenceTables ?? null;
+  const decodeMode = reuseContext?._decodeMode ?? 'fast';
+  const useFastPath = decodeMode !== 'reference';
+  const useFusedSequences = reuseContext?._useFusedSequences !== false;
 
   const ensureOutputCapacity = (additional: number): void => {
     const needed = totalSize + additional;
@@ -167,49 +172,103 @@ export function decompressFrame(
           appendToHistoryWindow(history, literals);
         }
       } else {
-        const seqResult = decodeSequences(
-          blockContent,
-          litBytesConsumed,
-          seqSectionSize,
-          prevSeqTables,
-          reuseContext?._sequences,
-        );
-        if (reuseContext) {
-          reuseContext._sequences = seqResult.sequences;
-        }
-        prevSeqTables = seqResult.tables;
-        if (onBlockDecoded) {
-          blockSequencesInfo = {
-            numSequences: seqResult.metadata.numSequences,
-            llMode: seqResult.metadata.llMode,
-            ofMode: seqResult.metadata.ofMode,
-            mlMode: seqResult.metadata.mlMode,
-            llTableLog: seqResult.metadata.llTableLog,
-            ofTableLog: seqResult.metadata.ofTableLog,
-            mlTableLog: seqResult.metadata.mlTableLog,
-            repeatOffsetCandidateCount: seqResult.metadata.repeatOffsetCandidateCount,
-          };
-        }
-        if (seqResult.sequences.length === 0) {
-          appendOutput(literals);
-          if (!block.lastBlock) {
-            appendToHistoryWindow(history, literals);
-          }
-        } else {
-          const decodedSize = literals.length + seqResult.metadata.totalMatchLength;
-          ensureOutputCapacity(decodedSize);
+        if (useFastPath && useFusedSequences) {
           const start = totalSize;
-          const written = executeSequencesInto(
+          const { written, seqResult } = decodeAndExecuteSequencesInto(
+            blockContent,
+            litBytesConsumed,
+            seqSectionSize,
+            prevSeqTables,
+            reuseContext?._sequences,
             literals,
-            seqResult.sequences,
             header.windowSize,
-            outputBuffer,
+            ensureOutputCapacity,
+            () => outputBuffer,
             start,
             repOffsets,
             history,
             !block.lastBlock,
           );
-          totalSize += written;
+          if (reuseContext) {
+            reuseContext._sequences = seqResult.sequences;
+          }
+          prevSeqTables = seqResult.tables;
+          if (onBlockDecoded) {
+            blockSequencesInfo = {
+              numSequences: seqResult.metadata.numSequences,
+              llMode: seqResult.metadata.llMode,
+              ofMode: seqResult.metadata.ofMode,
+              mlMode: seqResult.metadata.mlMode,
+              llTableLog: seqResult.metadata.llTableLog,
+              ofTableLog: seqResult.metadata.ofTableLog,
+              mlTableLog: seqResult.metadata.mlTableLog,
+              repeatOffsetCandidateCount: seqResult.metadata.repeatOffsetCandidateCount,
+            };
+          }
+          if (seqResult.sequences.length === 0) {
+            appendOutput(literals);
+            if (!block.lastBlock) {
+              appendToHistoryWindow(history, literals);
+            }
+          } else {
+            totalSize += written;
+          }
+        } else {
+          const seqResult = decodeSequences(
+            blockContent,
+            litBytesConsumed,
+            seqSectionSize,
+            prevSeqTables,
+            reuseContext?._sequences,
+          );
+          if (reuseContext) {
+            reuseContext._sequences = seqResult.sequences;
+          }
+          prevSeqTables = seqResult.tables;
+          if (onBlockDecoded) {
+            blockSequencesInfo = {
+              numSequences: seqResult.metadata.numSequences,
+              llMode: seqResult.metadata.llMode,
+              ofMode: seqResult.metadata.ofMode,
+              mlMode: seqResult.metadata.mlMode,
+              llTableLog: seqResult.metadata.llTableLog,
+              ofTableLog: seqResult.metadata.ofTableLog,
+              mlTableLog: seqResult.metadata.mlTableLog,
+              repeatOffsetCandidateCount: seqResult.metadata.repeatOffsetCandidateCount,
+            };
+          }
+          if (seqResult.sequences.length === 0) {
+            appendOutput(literals);
+            if (!block.lastBlock) {
+              appendToHistoryWindow(history, literals);
+            }
+          } else {
+            const decodedSize = literals.length + seqResult.metadata.totalMatchLength;
+            ensureOutputCapacity(decodedSize);
+            const start = totalSize;
+            const written = useFastPath
+              ? executeSequencesIntoFast(
+                  literals,
+                  seqResult.sequences,
+                  header.windowSize,
+                  outputBuffer,
+                  start,
+                  repOffsets,
+                  history,
+                  !block.lastBlock,
+                )
+              : executeSequencesInto(
+                  literals,
+                  seqResult.sequences,
+                  header.windowSize,
+                  outputBuffer,
+                  start,
+                  repOffsets,
+                  history,
+                  !block.lastBlock,
+                );
+            totalSize += written;
+          }
         }
       }
       pos += block.blockSize;

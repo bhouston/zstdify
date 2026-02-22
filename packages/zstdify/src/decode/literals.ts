@@ -166,7 +166,7 @@ function decodeHuffmanStreamByCountInto(
   let written = 0;
   for (let i = 0; i < numSymbols; i++) {
     // Peek max bits to index the table, then consume only the symbol bit length.
-    const peek = reader.readBits(maxNumBits);
+    const peek = reader.readBitsFast(maxNumBits);
     if (peek < 0 || peek >= table.length) {
       throw new ZstdError('Huffman invalid code', 'corruption_detected');
     }
@@ -204,20 +204,42 @@ function decodeHuffmanStreamToEndInto(
   const highestSetBit = 31 - Math.clz32(lastByte);
   const paddingBits = 8 - highestSetBit;
   let bitOffset = streamLength * 8 - paddingBits;
+  const streamBits = streamLength * 8;
 
   const readBitsZeroExtended = (numBits: number): number => {
     if (numBits <= 0) return 0;
     bitOffset -= numBits;
+    if (bitOffset >= 0) {
+      const byteIndex = bitOffset >>> 3;
+      const bitInByte = bitOffset & 7;
+      const word0 =
+        (stream[byteIndex] ?? 0) |
+        ((stream[byteIndex + 1] ?? 0) << 8) |
+        ((stream[byteIndex + 2] ?? 0) << 16) |
+        ((stream[byteIndex + 3] ?? 0) << 24);
+      if (bitInByte + numBits <= 32) {
+        return (word0 >>> bitInByte) & ((1 << numBits) - 1);
+      }
+      const low = word0 >>> bitInByte;
+      const highBits = numBits - (32 - bitInByte);
+      const word1 =
+        (stream[byteIndex + 4] ?? 0) |
+        ((stream[byteIndex + 5] ?? 0) << 8) |
+        ((stream[byteIndex + 6] ?? 0) << 16) |
+        ((stream[byteIndex + 7] ?? 0) << 24);
+      const high = (word1 & ((1 << highBits) - 1)) << (32 - bitInByte);
+      return (low | high) >>> 0;
+    }
+
     let value = 0;
     for (let i = 0; i < numBits; i++) {
       const abs = bitOffset + i;
-      if (abs < 0 || abs >= streamLength * 8) continue;
+      if (abs < 0 || abs >= streamBits) continue;
       const byteIndex = abs >>> 3;
       const bitInByte = abs & 7;
-      const bit = (stream[byteIndex]! >>> bitInByte) & 1;
-      value |= bit << i;
+      value |= ((stream[byteIndex]! >>> bitInByte) & 1) << i;
     }
-    return value;
+    return value >>> 0;
   };
 
   const mask = (1 << maxNumBits) - 1;

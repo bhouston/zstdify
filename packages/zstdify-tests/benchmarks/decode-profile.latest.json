@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "timestamp": "2026-02-22T01:33:49.119Z",
+  "nodeVersion": "v24.12.0",
+  "turns": 1,
+  "profileMode": "full-corpus",
+  "payloadCount": 5,
+  "payloads": [
+    {
+      "id": "war-and-peace-txt",
+      "category": "text",
+      "bytes": 30353,
+      "turns": 1
+    },
+    {
+      "id": "shakespeare-complete-txt",
+      "category": "text",
+      "bytes": 30353,
+      "turns": 0
+    },
+    {
+      "id": "enwik8",
+      "category": "text",
+      "bytes": 1048576,
+      "turns": 0
+    },
+    {
+      "id": "linux-kernel-tar",
+      "category": "archive",
+      "bytes": 1048576,
+      "turns": 0
+    },
+    {
+      "id": "apollo17-flightplan-pdf",
+      "category": "document",
+      "bytes": 231435,
+      "turns": 0
+    }
+  ],
+  "elapsedMs": 5.19,
+  "decodeOps": 2,
+  "decodeOpsPerSecond": 385.04,
+  "decodedMBPerSecond": 11.69,
+  "checksum": 478
+}

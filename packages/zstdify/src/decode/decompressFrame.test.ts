@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BitWriter } from '../bitstream/bitWriter.js';
 import { readU32LE } from '../bitstream/littleEndian.js';
 import { writeRawBlock, writeRLEBlock } from '../encode/blockWriter.js';
+import { compress } from '../compress.js';
 import { writeFrameHeader } from '../encode/frameWriter.js';
 import { computeContentChecksum32 } from '../frame/checksum.js';
 import { parseZstdFrame } from '../frame/frameHeader.js';
@@ -112,5 +113,15 @@ describe('decompressFrame', () => {
     const stored = readU32LE(frame, frame.length - 4);
     expect(stored).toBe(computeContentChecksum32(payload));
     expect(result.bytesConsumed).toBe(frame.length);
+  });
+
+  it('fast and reference decode modes produce identical output', () => {
+    const input = new TextEncoder().encode('lorem ipsum lorem ipsum lorem ipsum 1234567890 lorem ipsum');
+    const frame = compress(input, { level: 6, checksum: true });
+    const { header } = parseZstdFrame(frame, 0);
+    const fast = decompressFrame(frame, 0, header, undefined, undefined, true, { _decodeMode: 'fast' });
+    const reference = decompressFrame(frame, 0, header, undefined, undefined, true, { _decodeMode: 'reference' });
+    expect(fast.output).toEqual(reference.output);
+    expect(fast.bytesConsumed).toBe(reference.bytesConsumed);
   });
 });

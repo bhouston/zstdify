@@ -49,6 +49,8 @@ export function createHistoryWindow(windowSize: number, initial?: Uint8Array): H
 export interface DecoderReuseBag {
   _history?: HistoryWindow;
   _sequences?: PackedSequences;
+  _decodeMode?: 'fast' | 'reference';
+  _useFusedSequences?: boolean;
 }
 
 function createPackedSequences(capacity: number): PackedSequences {
@@ -380,6 +382,148 @@ export function executeSequencesInto(
       appendRangeToHistoryWindow(history, target, tailOutStart, remaining);
     }
   }
+  return outPos - targetOffset;
+}
+
+export function executeSequencesIntoFast(
+  literals: Uint8Array,
+  sequences: PackedSequences,
+  windowSize: number,
+  target: Uint8Array,
+  targetOffset: number,
+  repOffsets: [number, number, number] = [1, 4, 8],
+  historyInput: HistoryWindow | Uint8Array = { buffer: new Uint8Array(0), length: 0, writePos: 0 },
+  updateHistory = false,
+): number {
+  const history = isHistoryWindow(historyInput) ? historyInput : createHistoryWindow(windowSize, historyInput);
+  const historyLength = history.length;
+  const historyCap = history.buffer.length;
+  const historyOldestPos = historyCap > 0 ? (history.writePos - historyLength + historyCap) % historyCap : 0;
+  const historyBuffer = history.buffer;
+
+  let outPos = targetOffset;
+  let litPos = 0;
+  const seqCount = sequences.length;
+  const literalsLengthBySeq = sequences.literalsLength;
+  const offsetBySeq = sequences.offset;
+  const matchLengthBySeq = sequences.matchLength;
+
+  for (let seqIndex = 0; seqIndex < seqCount; seqIndex++) {
+    const seqLiteralsLength = literalsLengthBySeq[seqIndex]!;
+    if (seqLiteralsLength > 0) {
+      const litEnd = litPos + seqLiteralsLength;
+      if (litEnd > literals.length) {
+        throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
+      }
+      target.set(literals.subarray(litPos, litEnd), outPos);
+      outPos += seqLiteralsLength;
+      litPos = litEnd;
+    }
+
+    const ov = offsetBySeq[seqIndex]!;
+    const ll0 = seqLiteralsLength === 0;
+    let offset: number;
+    let repeatIndex: 0 | 1 | 2 | null = null;
+    const isNonRepeat = ov > 3 || (ov === 3 && ll0);
+    if (isNonRepeat) {
+      if (ov === 3) {
+        offset = repOffsets[0] - 1;
+        if (offset === 0) {
+          throw new ZstdError('Invalid match offset: repeat1-1 is 0', 'corruption_detected');
+        }
+      } else {
+        offset = ov - 3;
+      }
+    } else {
+      if (ll0) {
+        repeatIndex = ov === 1 ? 1 : 2;
+      } else {
+        repeatIndex = (ov - 1) as 0 | 1 | 2;
+      }
+      offset = repOffsets[repeatIndex]!;
+    }
+
+    const produced = outPos - targetOffset;
+    const maxReachBack = Math.min(windowSize, produced + historyLength);
+    if (offset <= 0 || offset > maxReachBack) {
+      throw new ZstdError(
+        `Invalid match offset: offset=${offset} maxReachBack=${maxReachBack} produced=${produced} history=${historyLength} window=${windowSize}`,
+        'corruption_detected',
+      );
+    }
+
+    let remainingMatch = matchLengthBySeq[seqIndex]!;
+    const historyBytesNeeded = offset > produced ? offset - produced : 0;
+    if (historyBytesNeeded > 0) {
+      if (historyCap === 0) {
+        throw new ZstdError('Invalid history read', 'corruption_detected');
+      }
+      const historyCopyLen = Math.min(historyBytesNeeded, remainingMatch);
+      const historyStart = historyLength - historyBytesNeeded;
+      if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
+        throw new ZstdError('Invalid history read', 'corruption_detected');
+      }
+      let physicalStart = historyOldestPos + historyStart;
+      if (physicalStart >= historyCap) {
+        physicalStart -= historyCap;
+      }
+      const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
+      target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
+      outPos += firstHistoryChunk;
+      const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
+      if (remainingHistoryChunk > 0) {
+        target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
+        outPos += remainingHistoryChunk;
+      }
+      remainingMatch -= historyCopyLen;
+    }
+
+    if (remainingMatch > 0) {
+      const copyStart = outPos - offset;
+      if (offset >= remainingMatch) {
+        target.copyWithin(outPos, copyStart, copyStart + remainingMatch);
+        outPos += remainingMatch;
+      } else if (offset <= 16) {
+        for (let i = 0; i < remainingMatch; i++) {
+          target[outPos + i] = target[outPos - offset + i]!;
+        }
+        outPos += remainingMatch;
+      } else {
+        let copied = offset;
+        target.copyWithin(outPos, copyStart, copyStart + copied);
+        outPos += copied;
+        while (copied < remainingMatch) {
+          const toCopy = Math.min(copied, remainingMatch - copied);
+          target.copyWithin(outPos, outPos - copied, outPos - copied + toCopy);
+          outPos += toCopy;
+          copied += toCopy;
+        }
+      }
+    }
+
+    if (isNonRepeat) {
+      repOffsets[2] = repOffsets[1];
+      repOffsets[1] = repOffsets[0];
+      repOffsets[0] = offset;
+    } else if (repeatIndex === 1) {
+      repOffsets[1] = repOffsets[0];
+      repOffsets[0] = offset;
+    } else if (repeatIndex === 2) {
+      repOffsets[2] = repOffsets[1];
+      repOffsets[1] = repOffsets[0];
+      repOffsets[0] = offset;
+    }
+  }
+
+  if (litPos < literals.length) {
+    target.set(literals.subarray(litPos), outPos);
+    outPos += literals.length - litPos;
+  }
+
+  if (updateHistory && outPos > targetOffset) {
+    appendRangeToHistoryWindow(history, target, targetOffset, outPos - targetOffset);
+  }
+
   return outPos - targetOffset;
 }
 

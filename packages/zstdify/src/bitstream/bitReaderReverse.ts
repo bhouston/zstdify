@@ -93,6 +93,25 @@ export class BitReaderReverse {
     return value;
   }
 
+  /**
+   * Fast path used by validated hot loops.
+   * Falls back to readBits() when the request crosses the logical stream start.
+   */
+  readBitsFast(n: number): number {
+    if (n < 1 || n > 24) {
+      return this.readBits(n);
+    }
+    const requestedStart = this.bitOffset - n;
+    if (requestedStart < this.startBit) {
+      return this.readBits(n);
+    }
+    this.bitOffset = requestedStart;
+    const byteIndex = requestedStart >>> 3;
+    const bitInByte = requestedStart & 7;
+    const word = byteIndex + 3 < this.dataLength ? readU32LEBounded(this.data, byteIndex) : readU32LEBounded(this.data, byteIndex);
+    return ((word >>> bitInByte) & BIT_MASKS[n]!) >>> 0;
+  }
+
   /** Skip trailing zero padding and end-mark bit from the stream tail. */
   skipPadding(): void {
     if (this.endBit <= this.startBit) {

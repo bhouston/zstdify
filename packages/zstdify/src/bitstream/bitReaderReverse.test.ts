@@ -52,4 +52,16 @@ describe('BitReaderReverse', () => {
     reader.readBits(2);
     expect(() => reader.unreadBits(20)).toThrow(/overflow|RangeError/i);
   });
+
+  it('readBitsFast matches readBits for hot-loop widths', () => {
+    const bytes = new Uint8Array([0xff, 0x12, 0x34, 0x56, 0x78, 0x80]);
+    const safe = new BitReaderReverse(bytes, 0, bytes.length);
+    const fast = new BitReaderReverse(bytes, 0, bytes.length);
+    safe.skipPadding();
+    fast.skipPadding();
+    const widths = [1, 2, 3, 5, 7, 9, 11, 13, 17, 21, 24];
+    for (const width of widths) {
+      expect(fast.readBitsFast(width)).toBe(safe.readBits(width));
+    }
+  });
 });
