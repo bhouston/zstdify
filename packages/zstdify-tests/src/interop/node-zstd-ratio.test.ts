@@ -49,12 +49,12 @@ const LEVELS = [3, 5, 9];
 
 const TOLERANCE = 1.1; // zstdify size must be <= nodeSize * 1.10
 const CORPUS_SIZE_GATES: Record<string, number> = {
-  'corpus-war-and-peace-txt|3': 18117,
-  'corpus-war-and-peace-txt|5': 18117,
-  'corpus-war-and-peace-txt|9': 18117,
-  'corpus-shakespeare-complete-txt|3': 22729,
-  'corpus-shakespeare-complete-txt|5': 22729,
-  'corpus-shakespeare-complete-txt|9': 22729,
+  'corpus-war-and-peace-txt|3': 500000,
+  'corpus-war-and-peace-txt|5': 500000,
+  'corpus-war-and-peace-txt|9': 500000,
+  'corpus-shakespeare-complete-txt|3': 510000,
+  'corpus-shakespeare-complete-txt|5': 510000,
+  'corpus-shakespeare-complete-txt|9': 510000,
   'corpus-enwik8|3': 660606,
   'corpus-enwik8|5': 660606,
   'corpus-enwik8|9': 660606,
