@@ -170,8 +170,8 @@ async function main(): Promise<void> {
     '',
     '## Throughput (MB/s)',
     '',
-    '| Payload     | Level | Compress zstdify | Compress Node | Decompress zstdify | Decompress Node | Decompress fzstd | Decompress zstddec |',
-    '|-------------|----------|-------|------------------|---------------|-------------------|------------------|---------------------|',
+    '| Payload     | Category | Level | Compress zstdify | Compress Node | Decompress zstdify | Decompress Node | Decompress fzstd | Decompress zstddec |',
+    '|-------------|------|----------|-------|------------------|---------------|-------------------|------------------|---------------------|',
     ...summary.throughput.map(
       (t) =>
         `| ${t.payloadId.padEnd(11)} | ${t.payloadCategory.padEnd(8)} | ${t.level} | ${t.compressZstdifyMbps.toFixed(2)} | ${t.compressNodeMbps.toFixed(2)} | ${t.decompressZstdifyMbps.toFixed(2)} | ${t.decompressNodeMbps.toFixed(2)} | ${t.decompressFzstdMbps.toFixed(2)} | ${t.decompressZstddecMbps.toFixed(2)} |`,
