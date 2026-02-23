@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { compress, decompress, generateDictionary } from 'zstdify';
@@ -36,63 +37,78 @@ function nodeDecompressWithDictionary(data: Uint8Array, dictionary: Uint8Array):
   );
 }
 
+function nodeDecompressWithoutDictionary(data: Uint8Array): Uint8Array {
+  return new Uint8Array(zlib.zstdDecompressSync(Buffer.from(data)));
+}
+
 type DictCase = {
   id: string;
   trainingSamples: Uint8Array[];
   payload: Uint8Array;
 };
 
-const CASES: DictCase[] = [
-  {
-    id: 'http-log-like-text',
-    trainingSamples: [
-      encoder.encode('GET /api/users?page=1 HTTP/1.1 host=example.com status=200 content-type=application/json'),
-      encoder.encode('GET /api/users?page=2 HTTP/1.1 host=example.com status=200 content-type=application/json'),
-      encoder.encode('POST /api/login HTTP/1.1 host=example.com status=200 content-type=application/json'),
-      encoder.encode('GET /assets/app.js HTTP/1.1 host=cdn.example.com status=200 content-type=application/javascript'),
-    ],
-    payload: encoder.encode(
-      Array.from(
-        { length: 200 },
-        (_, i) => `GET /api/users?page=${(i % 12) + 1} HTTP/1.1 host=example.com status=200 content-type=application/json`,
-      ).join('\n'),
-    ),
-  },
-  {
-    id: 'json-event-like-text',
-    trainingSamples: [
-      encoder.encode('{"event":"click","screen":"home","user":"u-123","platform":"ios","version":"1.2.0"}'),
-      encoder.encode('{"event":"view","screen":"search","user":"u-234","platform":"ios","version":"1.2.0"}'),
-      encoder.encode('{"event":"purchase","screen":"checkout","user":"u-345","platform":"android","version":"1.2.0"}'),
-      encoder.encode('{"event":"view","screen":"profile","user":"u-456","platform":"android","version":"1.2.0"}'),
-    ],
-    payload: encoder.encode(
-      Array.from(
-        { length: 240 },
-        (_, i) =>
-          `{"event":"view","screen":"home","user":"u-${100 + (i % 30)}","platform":"ios","version":"1.2.0","exp":"A"}`,
-      ).join('\n'),
-    ),
-  },
-  {
-    id: 'code-token-like-text',
-    trainingSamples: [
-      encoder.encode('function parseToken(input) { return input.trim().split(":"); }'),
-      encoder.encode('const options = { level: 3, checksum: false, strategy: "fast" };'),
-      encoder.encode('if (token.kind === "identifier") emitSymbol(token.value);'),
-      encoder.encode('for (let i = 0; i < tokens.length; i++) { consume(tokens[i]); }'),
-    ],
-    payload: encoder.encode(
-      Array.from(
-        { length: 220 },
-        (_, i) =>
-          `const token${i} = parseToken("identifier:node:zstd:${i % 7}"); if (token${i}[0] === "identifier") emitSymbol(token${i}[1]);`,
-      ).join('\n'),
-    ),
-  },
-];
+type PayloadVariableSpec =
+  | {
+      kind: 'index';
+    }
+  | {
+      kind: 'mod';
+      mod: number;
+      add?: number;
+    };
+
+type DictCaseFixture = {
+  id: string;
+  trainingSamples: string[];
+  payload: {
+    count: number;
+    template: string;
+    variables: Record<string, PayloadVariableSpec>;
+  };
+};
+
+const FIXTURE_DIR = new URL('../../fixtures/interop/node-zstd-dictionary-corpus/', import.meta.url);
+
+function renderPayloadFromFixture(spec: DictCaseFixture['payload']): Uint8Array {
+  const lines: string[] = [];
+  for (let i = 0; i < spec.count; i++) {
+    let line = spec.template;
+    for (const [name, variableSpec] of Object.entries(spec.variables)) {
+      let value = i;
+      if (variableSpec.kind === 'mod') {
+        value = (i % variableSpec.mod) + (variableSpec.add ?? 0);
+      }
+      line = line.replaceAll(`{{${name}}}`, String(value));
+    }
+    lines.push(line);
+  }
+  return encoder.encode(lines.join('\n'));
+}
+
+function loadCaseFromFixture(id: string): DictCase {
+  const fixtureRaw = readFileSync(new URL(`${id}.txt`, FIXTURE_DIR), 'utf8');
+  const fixture = JSON.parse(fixtureRaw) as DictCaseFixture;
+  return {
+    id: fixture.id,
+    trainingSamples: fixture.trainingSamples.map((sample) => encoder.encode(sample)),
+    payload: renderPayloadFromFixture(fixture.payload),
+  };
+}
+
+const CASE_IDS = ['http-log-like-text', 'json-event-like-text', 'code-token-like-text'] as const;
+const CASES: DictCase[] = CASE_IDS.map((id) => loadCaseFromFixture(id));
 
 describe('interop: dictionary training (fast minimal cases, zstdify <-> Node zstd)', () => {
+  for (const c of CASES) {
+    it(`${c.id}: zstdify frame without dictionary decodes in both runtimes`, () => {
+      const zstdifyWithoutDictionary = compress(c.payload, {
+        level: LEVEL,
+      });
+      expect(sha256(decompress(zstdifyWithoutDictionary))).toBe(sha256(c.payload));
+      expect(sha256(nodeDecompressWithoutDictionary(zstdifyWithoutDictionary))).toBe(sha256(c.payload));
+    });
+  }
+
   for (const c of CASES) {
     it(`${c.id}: Node dictionary ratio improves and zstdify decodes Node frame`, () => {
       const dictionary = generateDictionary(c.trainingSamples, {

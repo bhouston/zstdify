@@ -1,0 +1,20 @@
+{
+  "id": "json-event-like-text",
+  "trainingSamples": [
+    "{\"event\":\"click\",\"screen\":\"home\",\"user\":\"u-123\",\"platform\":\"ios\",\"version\":\"1.2.0\"}",
+    "{\"event\":\"view\",\"screen\":\"search\",\"user\":\"u-234\",\"platform\":\"ios\",\"version\":\"1.2.0\"}",
+    "{\"event\":\"purchase\",\"screen\":\"checkout\",\"user\":\"u-345\",\"platform\":\"android\",\"version\":\"1.2.0\"}",
+    "{\"event\":\"view\",\"screen\":\"profile\",\"user\":\"u-456\",\"platform\":\"android\",\"version\":\"1.2.0\"}"
+  ],
+  "payload": {
+    "count": 240,
+    "template": "{\"event\":\"view\",\"screen\":\"home\",\"user\":\"u-{{user}}\",\"platform\":\"ios\",\"version\":\"1.2.0\",\"exp\":\"A\"}",
+    "variables": {
+      "user": {
+        "kind": "mod",
+        "mod": 30,
+        "add": 100
+      }
+    }
+  }
+}

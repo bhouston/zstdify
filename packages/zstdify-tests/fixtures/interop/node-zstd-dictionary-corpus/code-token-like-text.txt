@@ -1,0 +1,22 @@
+{
+  "id": "code-token-like-text",
+  "trainingSamples": [
+    "function parseToken(input) { return input.trim().split(\":\"); }",
+    "const options = { level: 3, checksum: false, strategy: \"fast\" };",
+    "if (token.kind === \"identifier\") emitSymbol(token.value);",
+    "for (let i = 0; i < tokens.length; i++) { consume(tokens[i]); }"
+  ],
+  "payload": {
+    "count": 220,
+    "template": "const token{{i}} = parseToken(\"identifier:node:zstd:{{mod7}}\"); if (token{{i}}[0] === \"identifier\") emitSymbol(token{{i}}[1]);",
+    "variables": {
+      "i": {
+        "kind": "index"
+      },
+      "mod7": {
+        "kind": "mod",
+        "mod": 7
+      }
+    }
+  }
+}

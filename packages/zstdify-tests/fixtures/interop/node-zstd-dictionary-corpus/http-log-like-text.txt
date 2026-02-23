@@ -1,0 +1,20 @@
+{
+  "id": "http-log-like-text",
+  "trainingSamples": [
+    "GET /api/users?page=1 HTTP/1.1 host=example.com status=200 content-type=application/json",
+    "GET /api/users?page=2 HTTP/1.1 host=example.com status=200 content-type=application/json",
+    "POST /api/login HTTP/1.1 host=example.com status=200 content-type=application/json",
+    "GET /assets/app.js HTTP/1.1 host=cdn.example.com status=200 content-type=application/javascript"
+  ],
+  "payload": {
+    "count": 200,
+    "template": "GET /api/users?page={{page}} HTTP/1.1 host=example.com status=200 content-type=application/json",
+    "variables": {
+      "page": {
+        "kind": "mod",
+        "mod": 12,
+        "add": 1
+      }
+    }
+  }
+}
