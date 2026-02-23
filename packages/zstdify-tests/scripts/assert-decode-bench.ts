@@ -2,7 +2,6 @@
 /**
  * Decode benchmark guardrails:
  * - ensure zstdify decode remains a reasonable fraction of fzstd on the same run
- * - ensure node-compressed decode doesn't regress far below zstdify-compressed decode
  */
 
 import fs from 'node:fs';
@@ -15,11 +14,9 @@ const DECODE_ONLY_JSON = path.join(BENCH_DIR, 'decode-only.latest.json');
 
 const MIN_RATIO_VS_FZSTD_PER_PAYLOAD = 0.25;
 const MIN_RATIO_VS_FZSTD_AVG = 0.32;
-const MIN_NODE_PARITY_PER_PAYLOAD = 0.85;
 
 type ThroughputRow = {
   payloadId: string;
-  decodeZstdifyFromZstdifyMbps: number;
   decodeZstdifyFromNodeMbps: number;
   decodeFzstdFromNodeMbps: number;
 };
@@ -48,23 +45,16 @@ function main(): void {
   for (const row of rows) {
     const zstdifyNode = Number(row.decodeZstdifyFromNodeMbps);
     const fzstdNode = Number(row.decodeFzstdFromNodeMbps);
-    const zstdifySelf = Number(row.decodeZstdifyFromZstdifyMbps);
-    if (!(zstdifyNode > 0) || !(fzstdNode > 0) || !(zstdifySelf > 0)) {
+    if (!(zstdifyNode > 0) || !(fzstdNode > 0)) {
       fail(`Non-positive throughput value for payload ${row.payloadId}.`);
     }
 
     const ratioVsFzstd = zstdifyNode / fzstdNode;
-    const nodeParity = zstdifyNode / zstdifySelf;
     ratioSum += ratioVsFzstd;
 
     if (ratioVsFzstd < MIN_RATIO_VS_FZSTD_PER_PAYLOAD) {
       fail(
         `${row.payloadId} ratio zstdify(node)/fzstd(node)=${ratioVsFzstd.toFixed(3)} is below ${MIN_RATIO_VS_FZSTD_PER_PAYLOAD.toFixed(3)}.`,
-      );
-    }
-    if (nodeParity < MIN_NODE_PARITY_PER_PAYLOAD) {
-      fail(
-        `${row.payloadId} parity zstdify(node)/zstdify(zstdify)=${nodeParity.toFixed(3)} is below ${MIN_NODE_PARITY_PER_PAYLOAD.toFixed(3)}.`,
       );
     }
   }

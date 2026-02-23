@@ -75,7 +75,7 @@ async function main(): Promise<void> {
       );
       const zstdifyCompressed = compress(data, { level });
       const nodeCompressed = nodeCompress(data, level);
-      const zstdifyDecompressInput = zstdifyCompressed;
+      const zstdifyDecompressInput = nodeCompressed;
       const nodeDecompressInput = nodeCompressed;
 
       const bench = new Bench({

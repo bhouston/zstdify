@@ -2,7 +2,7 @@
 
 /**
  * Focused decode profiler:
- * - compress corpus payloads once
+ * - node-compress corpus payloads once
  * - run many decode turns in a tight loop
  * - intended to run with --cpu-prof for hotspot analysis
  *
@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
-import { compress, type DecoderContext, decompress } from 'zstdify';
+import { type DecoderContext, decompress } from 'zstdify';
 import { loadBenchCorpus, selectProfilePayload } from './bench-corpus.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,12 +61,10 @@ function main(): void {
     id: payload.id,
     category: payload.category,
     bytes: payload.data.length,
-    zstdifyCompressed: compress(payload.data, { level: 6 }),
     nodeCompressed: zlib.zstdCompressSync(Buffer.from(payload.data), {
       params: { [zlib.constants.ZSTD_c_compressionLevel]: 6 },
     }),
-    ctxZstdify: {} as DecoderContext,
-    ctxNode: {} as DecoderContext,
+    ctx: {} as DecoderContext,
     turns: 0,
   }));
 
@@ -90,12 +88,11 @@ function main(): void {
     if (!p) {
       throw new Error('Profile payload selection failed');
     }
-    const a = decompress(p.zstdifyCompressed, { validateChecksum: false, reuseContext: p.ctxZstdify });
-    const b = decompress(p.nodeCompressed, { validateChecksum: false, reuseContext: p.ctxNode });
+    const a = decompress(p.nodeCompressed, { validateChecksum: false, reuseContext: p.ctx });
     // biome-ignore lint/style/noNonNullAssertion: safe
-    checksum = (checksum + a[0]! + b[0]!) | 0;
+    checksum = (checksum + a[0]!) | 0;
     p.turns++;
-    totalDecodedBytes += p.bytes * 2;
+    totalDecodedBytes += p.bytes;
 
     const completedTurns = i + 1;
     if (completedTurns === turns || completedTurns % progressEveryTurns === 0) {
@@ -126,8 +123,8 @@ function main(): void {
       turns: p.turns,
     })),
     elapsedMs: Number(elapsedMs.toFixed(2)),
-    decodeOps: turns * 2,
-    decodeOpsPerSecond: Number(((turns * 2 * 1000) / elapsedMs).toFixed(2)),
+    decodeOps: turns,
+    decodeOpsPerSecond: Number(((turns * 1000) / elapsedMs).toFixed(2)),
     decodedMBPerSecond: Number(((totalDecodedBytes / 1_000_000 / elapsedMs) * 1000).toFixed(2)),
     checksum,
   };

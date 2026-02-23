@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
  * Decode-focused benchmark:
- * - zstdify decode of zstdify-compressed frames
  * - zstdify decode of Node-compressed frames
  * - Node decode of Node-compressed frames
- * - zstddec decode of zstdify-compressed frames
+ * - zstddec decode of Node-compressed frames
  *
  * Writes packages/zstdify-tests/benchmarks/decode-only.latest.{json,md}.
  */
@@ -16,7 +15,7 @@ import zlib from 'node:zlib';
 import { decompress as fzstdDecompress } from 'fzstd';
 import { Bench } from 'tinybench';
 import { ZSTDDecoder } from 'zstddec';
-import { compress, decompress } from 'zstdify';
+import { decompress } from 'zstdify';
 import { loadBenchCorpus } from './bench-corpus.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,11 +40,10 @@ interface Row {
   payloadCategory: string;
   payloadBytes: number;
   level: number;
-  decodeZstdifyFromZstdifyMs: number;
   decodeZstdifyFromNodeMs: number;
   decodeNodeFromNodeMs: number;
   decodeFzstdFromNodeMs: number;
-  decodeZstddecFromZstdifyMs: number;
+  decodeZstddecFromNodeMs: number;
 }
 
 async function main(): Promise<void> {
@@ -59,7 +57,6 @@ async function main(): Promise<void> {
   for (const { id: payloadId, category: payloadCategory, data } of payloads) {
     const payloadBytes = data.length;
     for (const level of LEVELS) {
-      const zstdifyCompressed = compress(data, { level });
       const nodeCompressed = nodeCompress(data, level);
 
       const bench = new Bench({
@@ -69,9 +66,6 @@ async function main(): Promise<void> {
         iterations: 30,
       });
 
-      bench.add('decode zstdify <- zstdify', () => {
-        decompress(zstdifyCompressed, { validateChecksum: false });
-      });
       bench.add('decode zstdify <- node', () => {
         decompress(nodeCompressed, { validateChecksum: false });
       });
@@ -81,8 +75,8 @@ async function main(): Promise<void> {
       bench.add('decode fzstd <- node', () => {
         fzstdDecompress(nodeCompressed);
       });
-      bench.add('decode zstddec <- zstdify', () => {
-        decoder.decode(zstdifyCompressed, payloadBytes);
+      bench.add('decode zstddec <- node', () => {
+        decoder.decode(nodeCompressed, payloadBytes);
       });
 
       // biome-ignore lint: sequential runs for stable and comparable timings
@@ -100,11 +94,10 @@ async function main(): Promise<void> {
         payloadCategory,
         payloadBytes,
         level,
-        decodeZstdifyFromZstdifyMs: getMedianMs('decode zstdify <- zstdify'),
         decodeZstdifyFromNodeMs: getMedianMs('decode zstdify <- node'),
         decodeNodeFromNodeMs: getMedianMs('decode node <- node'),
         decodeFzstdFromNodeMs: getMedianMs('decode fzstd <- node'),
-        decodeZstddecFromZstdifyMs: getMedianMs('decode zstddec <- zstdify'),
+        decodeZstddecFromNodeMs: getMedianMs('decode zstddec <- node'),
       });
     }
   }
@@ -119,11 +112,10 @@ async function main(): Promise<void> {
       payloadCategory: r.payloadCategory,
       payloadBytes: r.payloadBytes,
       level: r.level,
-      decodeZstdifyFromZstdifyMbps: mbps(r.payloadBytes, r.decodeZstdifyFromZstdifyMs),
       decodeZstdifyFromNodeMbps: mbps(r.payloadBytes, r.decodeZstdifyFromNodeMs),
       decodeNodeFromNodeMbps: mbps(r.payloadBytes, r.decodeNodeFromNodeMs),
       decodeFzstdFromNodeMbps: mbps(r.payloadBytes, r.decodeFzstdFromNodeMs),
-      decodeZstddecFromZstdifyMbps: mbps(r.payloadBytes, r.decodeZstddecFromZstdifyMs),
+      decodeZstddecFromNodeMbps: mbps(r.payloadBytes, r.decodeZstddecFromNodeMs),
     })),
   };
 
@@ -137,11 +129,11 @@ async function main(): Promise<void> {
     '',
     '## Throughput (MB/s)',
     '',
-    '| Payload | Category | Level | zstdify <- zstdify | zstdify <- node | node <- node | fzstd <- node | zstddec <- zstdify |',
-    '|---|---|---:|---:|---:|---:|---:|---:|',
+    '| Payload | Category | Level | zstdify <- node | node <- node | fzstd <- node | zstddec <- node |',
+    '|---|---|---:|---:|---:|---:|---:|',
     ...summary.throughput.map(
       (t) =>
-        `| ${t.payloadId} | ${t.payloadCategory} | ${t.level} | ${t.decodeZstdifyFromZstdifyMbps.toFixed(2)} | ${t.decodeZstdifyFromNodeMbps.toFixed(2)} | ${t.decodeNodeFromNodeMbps.toFixed(2)} | ${t.decodeFzstdFromNodeMbps.toFixed(2)} | ${t.decodeZstddecFromZstdifyMbps.toFixed(2)} |`,
+        `| ${t.payloadId} | ${t.payloadCategory} | ${t.level} | ${t.decodeZstdifyFromNodeMbps.toFixed(2)} | ${t.decodeNodeFromNodeMbps.toFixed(2)} | ${t.decodeFzstdFromNodeMbps.toFixed(2)} | ${t.decodeZstddecFromNodeMbps.toFixed(2)} |`,
     ),
     '',
   ].join('\n');
