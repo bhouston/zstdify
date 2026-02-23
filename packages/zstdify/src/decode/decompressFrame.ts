@@ -9,7 +9,7 @@ import { validateContentChecksum } from '../frame/checksum.js';
 import type { FrameHeader } from '../frame/frameHeader.js';
 import { parseBlockHeader } from './block.js';
 import type { DecodeTrace, DecodeTraceLiteralsInfo, DecodeTraceSequencesInfo } from './debugTrace.js';
-import { decodeAndExecuteSequencesInto, shouldUseFusedSequencePath } from './fusedSequences.js';
+import { decodeAndExecuteSequencesInto } from './fusedSequences.js';
 import {
   decodeCompressedLiterals,
   decodeRawLiterals,
@@ -22,11 +22,9 @@ import {
   appendRLEToHistoryWindow,
   appendToHistoryWindow,
   type DecoderReuseBag,
-  executeSequencesInto,
-  executeSequencesIntoFast,
   getOrCreateHistoryWindow,
 } from './reconstruct.js';
-import { decodeSequences, type SequenceTables } from './sequences.js';
+import type { SequenceTables } from './sequences.js';
 
 export function decompressFrame(
   data: Uint8Array,
@@ -51,9 +49,6 @@ export function decompressFrame(
     maxNumBits: number;
   } | null = dictionary?.huffmanTable ?? null;
   let prevSeqTables: SequenceTables | null = dictionary?.sequenceTables ?? null;
-  const decodeMode = reuseContext?._decodeMode ?? 'fast';
-  const useFastPath = decodeMode !== 'reference';
-  const useFusedSequences = reuseContext?._useFusedSequences !== false;
 
   const ensureOutputCapacity = (additional: number): void => {
     const needed = totalSize + additional;
@@ -172,108 +167,36 @@ export function decompressFrame(
           appendToHistoryWindow(history, literals);
         }
       } else {
-        const canUseFusedPath =
-          useFastPath &&
-          useFusedSequences &&
-          shouldUseFusedSequencePath(seqSectionSize, literals.length, header.windowSize, !block.lastBlock);
-        if (canUseFusedPath) {
-          const start = totalSize;
-          const { written, seqResult } = decodeAndExecuteSequencesInto(
-            blockContent,
-            litBytesConsumed,
-            seqSectionSize,
-            prevSeqTables,
-            reuseContext?._sequences,
-            literals,
-            header.windowSize,
-            ensureOutputCapacity,
-            () => outputBuffer,
-            start,
-            repOffsets,
-            history,
-            !block.lastBlock,
-          );
-          if (reuseContext) {
-            reuseContext._sequences = seqResult.sequences;
-          }
-          prevSeqTables = seqResult.tables;
-          if (onBlockDecoded) {
-            blockSequencesInfo = {
-              numSequences: seqResult.metadata.numSequences,
-              llMode: seqResult.metadata.llMode,
-              ofMode: seqResult.metadata.ofMode,
-              mlMode: seqResult.metadata.mlMode,
-              llTableLog: seqResult.metadata.llTableLog,
-              ofTableLog: seqResult.metadata.ofTableLog,
-              mlTableLog: seqResult.metadata.mlTableLog,
-              repeatOffsetCandidateCount: seqResult.metadata.repeatOffsetCandidateCount,
-            };
-          }
-          if (seqResult.sequences.length === 0) {
-            appendOutput(literals);
-            if (!block.lastBlock) {
-              appendToHistoryWindow(history, literals);
-            }
-          } else {
-            totalSize += written;
-          }
-        } else {
-          const seqResult = decodeSequences(
-            blockContent,
-            litBytesConsumed,
-            seqSectionSize,
-            prevSeqTables,
-            reuseContext?._sequences,
-          );
-          if (reuseContext) {
-            reuseContext._sequences = seqResult.sequences;
-          }
-          prevSeqTables = seqResult.tables;
-          if (onBlockDecoded) {
-            blockSequencesInfo = {
-              numSequences: seqResult.metadata.numSequences,
-              llMode: seqResult.metadata.llMode,
-              ofMode: seqResult.metadata.ofMode,
-              mlMode: seqResult.metadata.mlMode,
-              llTableLog: seqResult.metadata.llTableLog,
-              ofTableLog: seqResult.metadata.ofTableLog,
-              mlTableLog: seqResult.metadata.mlTableLog,
-              repeatOffsetCandidateCount: seqResult.metadata.repeatOffsetCandidateCount,
-            };
-          }
-          if (seqResult.sequences.length === 0) {
-            appendOutput(literals);
-            if (!block.lastBlock) {
-              appendToHistoryWindow(history, literals);
-            }
-          } else {
-            const decodedSize = literals.length + seqResult.metadata.totalMatchLength;
-            ensureOutputCapacity(decodedSize);
-            const start = totalSize;
-            const written = useFastPath
-              ? executeSequencesIntoFast(
-                  literals,
-                  seqResult.sequences,
-                  header.windowSize,
-                  outputBuffer,
-                  start,
-                  repOffsets,
-                  history,
-                  !block.lastBlock,
-                )
-              : executeSequencesInto(
-                  literals,
-                  seqResult.sequences,
-                  header.windowSize,
-                  outputBuffer,
-                  start,
-                  repOffsets,
-                  history,
-                  !block.lastBlock,
-                );
-            totalSize += written;
-          }
+        // Decoded block output is bounded by zstd block max size (128 KiB).
+        ensureOutputCapacity(128 * 1024);
+        const start = totalSize;
+        const { written, tables, metadata } = decodeAndExecuteSequencesInto(
+          blockContent,
+          litBytesConsumed,
+          seqSectionSize,
+          prevSeqTables,
+          literals,
+          header.windowSize,
+          outputBuffer,
+          start,
+          repOffsets,
+          history,
+          !block.lastBlock,
+        );
+        prevSeqTables = tables;
+        if (onBlockDecoded) {
+          blockSequencesInfo = {
+            numSequences: metadata.numSequences,
+            llMode: metadata.llMode,
+            ofMode: metadata.ofMode,
+            mlMode: metadata.mlMode,
+            llTableLog: metadata.llTableLog,
+            ofTableLog: metadata.ofTableLog,
+            mlTableLog: metadata.mlTableLog,
+            repeatOffsetCandidateCount: metadata.repeatOffsetCandidateCount,
+          };
         }
+        totalSize += written;
       }
       pos += block.blockSize;
     } else {
