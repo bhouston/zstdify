@@ -29,9 +29,9 @@ export function parseFrameHeader(data: Uint8Array, offset: number): FrameHeader 
   if (offset + 2 > data.length) {
     throw new ZstdError('Frame header truncated', 'corruption_detected');
   }
-
+  offset = offset | 0; // Hint JIT: integer math for subsequent offset updates
   const fhd = data[offset]!;
-  offset++;
+  offset = (offset + 1) | 0;
 
   const frameContentSizeFlag = (fhd >> 6) & 3;
   const singleSegment = ((fhd >> 5) & 1) === 1;
@@ -62,10 +62,15 @@ export function parseFrameHeader(data: Uint8Array, offset: number): FrameHeader 
 
     const exponent = (wd >> 3) & 0x1f;
     const mantissa = wd & 7;
-    const windowLog = 10 + exponent;
-    const windowBase = 2 ** windowLog;
-    const windowAdd = (windowBase / 8) * mantissa;
-    windowSize = windowBase + windowAdd;
+    const windowLog = (10 + exponent) | 0;
+    // Integer path for windowLog < 32 (guide: bitwise/shift, avoid float)
+    if (windowLog < 32) {
+      const windowBase = 1 << windowLog;
+      windowSize = (windowBase + ((windowBase * mantissa) >>> 3)) | 0;
+    } else {
+      const windowBase = 2 ** windowLog;
+      windowSize = Math.floor(windowBase + (windowBase / 8) * mantissa);
+    }
   }
 
   // Dictionary_ID (before Frame_Content_Size per spec)
@@ -108,11 +113,11 @@ export function parseFrameHeader(data: Uint8Array, offset: number): FrameHeader 
   }
 
   return {
-    headerSize,
+    headerSize: headerSize | 0,
     windowSize,
     contentSize,
     hasContentChecksum: contentChecksumFlag,
-    dictionaryId: dictionaryId !== 0 ? dictionaryId : null,
+    dictionaryId,
     singleSegment,
   };
 }

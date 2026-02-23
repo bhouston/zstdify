@@ -13,7 +13,7 @@ const PRIME64_5 = 0x27d4eb2f165667c5n;
 const MASK64 = 0xffffffffffffffffn;
 
 function rotl64(x: bigint, r: number): bigint {
-  r = r & 63;
+  r = (r & 63) | 0; // Hint JIT: integer
   return ((x << BigInt(r)) | (x >> BigInt(64 - r))) & MASK64;
 }
 
@@ -36,8 +36,8 @@ function mergeRound64(acc: bigint, val: bigint): bigint {
  */
 export function xxh64(data: Uint8Array, seed = 0n): bigint {
   let acc: bigint;
-  const len = data.length;
-  let offset = 0;
+  const len = data.length | 0; // Hint JIT: integer for hot loop
+  let offset = 0 | 0;
 
   if (len >= 32) {
     let v1 = (seed + PRIME64_1 + PRIME64_2) & MASK64;
