@@ -53,8 +53,6 @@ export function createHistoryWindow(windowSize: number, initial?: Uint8Array): H
 export interface DecoderReuseBag {
   _history?: HistoryWindow;
   _sequences?: PackedSequences;
-  _decodeMode?: 'fast' | 'reference';
-  _useFusedSequences?: boolean;
 }
 
 function createPackedSequences(capacity: number): PackedSequences {

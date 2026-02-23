@@ -112,6 +112,9 @@ export function decompressFrame(
       totalSize += block.blockSize;
       pos += 1;
     } else if (block.blockType === 2) {
+      if (pos + block.blockSize > data.length) {
+        throw new ZstdError('Compressed block truncated', 'corruption_detected');
+      }
       const blockContent = data.subarray(pos, pos + block.blockSize);
       const { header: litHeader, dataOffset: litDataOffset } = parseLiteralsSectionHeader(blockContent, 0);
       if (onBlockDecoded) {

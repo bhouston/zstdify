@@ -101,6 +101,13 @@ describe('decompressFrame', () => {
     expect(() => decompressFrame(frame, 0, header)).toThrowError(/Treeless literals without previous Huffman table/i);
   });
 
+  it('rejects truncated compressed blocks before block decode', () => {
+    const blockHeader = new Uint8Array([0x15, 0x00, 0x00]); // last=1, type=2, size=2
+    const frame = concatBytes(writeFrameHeader(1, false), blockHeader, new Uint8Array([0x00]));
+    const { header } = parseZstdFrame(frame, 0);
+    expect(() => decompressFrame(frame, 0, header)).toThrowError(/compressed block truncated/i);
+  });
+
   it('reports consumed bytes including checksum bytes', () => {
     const payload = new TextEncoder().encode('world');
     const frame = concatBytes(
@@ -115,13 +122,14 @@ describe('decompressFrame', () => {
     expect(result.bytesConsumed).toBe(frame.length);
   });
 
-  it('fast and reference decode modes produce identical output', () => {
+  it('reusing decoder context does not change output', () => {
     const input = new TextEncoder().encode('lorem ipsum lorem ipsum lorem ipsum 1234567890 lorem ipsum');
     const frame = compress(input, { level: 6, checksum: true });
     const { header } = parseZstdFrame(frame, 0);
-    const fast = decompressFrame(frame, 0, header, undefined, undefined, true, { _decodeMode: 'fast' });
-    const reference = decompressFrame(frame, 0, header, undefined, undefined, true, { _decodeMode: 'reference' });
-    expect(fast.output).toEqual(reference.output);
-    expect(fast.bytesConsumed).toBe(reference.bytesConsumed);
+    const reuseContext = {};
+    const first = decompressFrame(frame, 0, header, undefined, undefined, true, reuseContext);
+    const second = decompressFrame(frame, 0, header, undefined, undefined, true, reuseContext);
+    expect(first.output).toEqual(second.output);
+    expect(first.bytesConsumed).toBe(second.bytesConsumed);
   });
 });

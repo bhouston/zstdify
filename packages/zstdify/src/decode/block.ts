@@ -5,6 +5,7 @@
 import { ZstdError } from '../errors.js';
 
 export const BLOCK_HEADER_SIZE = 3;
+export const MAX_BLOCK_SIZE = 128 * 1024;
 
 export type BlockType = 0 | 1 | 2 | 3; // Raw, RLE, Compressed, Reserved
 
@@ -35,6 +36,9 @@ export function parseBlockHeader(data: Uint8Array, offset: number): BlockHeader 
 
   if (blockType === 3) {
     throw new ZstdError('Reserved block type', 'corruption_detected');
+  }
+  if (blockSize > MAX_BLOCK_SIZE) {
+    throw new ZstdError('Block size exceeds maximum', 'corruption_detected');
   }
 
   return { lastBlock, blockType, blockSize };
