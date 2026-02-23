@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { compress } from '../compress.js';
 import { parseLiteralsSectionHeader } from '../decode/literals.js';
 import { decodeSequences } from '../decode/sequences.js';
+import * as fse from '../entropy/fse.js';
 import { decompress } from '../decompress.js';
 import { parseFrameHeader } from '../frame/frameHeader.js';
 import { __benchInternals, buildCompressedBlockPayload, type SequenceEntropyContext, writeCompressedBlock } from './compressedBlock.js';
@@ -137,6 +138,25 @@ describe('compressed block encoder', () => {
     const modes = payload![sequenceModesOffset(payload!, litBytes)] ?? 0;
     expect((modes & 0x03) === 0).toBe(true);
     expect(((modes >> 6) & 0x3) !== 1 && ((modes >> 4) & 0x3) !== 1 && ((modes >> 2) & 0x3) !== 1).toBe(true);
+  });
+
+  it('surfaces sequence entropy table build failures instead of swallowing them', () => {
+    const injected = new Error('injected normalize failure');
+    const spy = vi.spyOn(fse, 'normalizeCountsForTable').mockImplementation(() => {
+      throw injected;
+    });
+    const literals = new Uint8Array(512);
+    const sequences = new Array(80).fill(0).map((_, i) => ({
+      literalsLength: i % 5 === 0 ? 3 : 0,
+      offset: i % 7 === 0 ? 32 : 1,
+      matchLength: i % 4 === 0 ? 9 : 3,
+    }));
+
+    try {
+      expect(() => buildCompressedBlockPayload(literals, sequences)).toThrow(/injected normalize failure/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('round-trips sequence tuples for json-event-like payload', () => {

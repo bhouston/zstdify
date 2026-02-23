@@ -1,6 +1,8 @@
 import { BitWriter } from '../bitstream/bitWriter.js';
 import { encodeReverseBitstream, ReverseBitWriter } from '../bitstream/reverseBitWriter.js';
+import { buildFSEDecodeTable, normalizeCountsForTable, readNCount, writeNCount } from '../entropy/fse.js';
 import { buildHuffmanDecodeTable, weightsToNumBits } from '../entropy/huffman.js';
+import { readWeightsFSE } from '../entropy/weights.js';
 
 export interface LiteralEntropyTable {
   maxNumBits: number;
@@ -24,6 +26,8 @@ interface HuffmanBuildResult {
 
 let literalBitCountsScratch: Uint8Array | null = null;
 let literalBitValuesScratch: Uint32Array | null = null;
+const WEIGHT_MAX_SYMBOL = 11;
+const WEIGHT_MAX_TABLE_LOG = 7;
 
 function ensureLiteralBitScratch(minLength: number): { counts: Uint8Array; values: Uint32Array } {
   const counts = literalBitCountsScratch;
@@ -137,38 +141,67 @@ function buildHuffmanDepths(freq: Uint32Array): Uint8Array | null {
 function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | null {
   if (literals.length < 8) return null;
   let maxSymbol = 0;
-  const freq = new Uint32Array(257);
+  const freq = new Uint32Array(256);
   for (let i = 0; i < literals.length; i++) {
     const b = literals[i] ?? 0;
     freq[b] = (freq[b] ?? 0) + 1;
     if (b > maxSymbol) maxSymbol = b;
   }
-  if (maxSymbol > 127) return null; // Direct-weight path is limited to <= 128 serialized weights.
-  const pseudoSymbol = maxSymbol + 1;
-  freq[pseudoSymbol] = 1;
-  const depths = buildHuffmanDepths(freq);
-  if (!depths) return null;
-  let maxDepth = 0;
-  for (let s = 0; s <= pseudoSymbol; s++) {
-    const d = depths[s] ?? 0;
-    if (d > maxDepth) maxDepth = d;
-  }
-  if (maxDepth <= 0 || maxDepth > 11) return null;
-
-  const weights = new Array<number>(maxSymbol + 1).fill(0);
-  for (let s = 0; s <= maxSymbol; s++) {
-    const d = depths[s] ?? 0;
-    if (d > 0) weights[s] = maxDepth + 1 - d;
-  }
-
+  let weights: number[];
+  let maxNumBits = 0;
   const fullWeights = new Array<number>(256).fill(0);
-  for (let i = 0; i < weights.length; i++) fullWeights[i] = weights[i] ?? 0;
-  const pseudoDepth = depths[pseudoSymbol] ?? 0;
-  if (pseudoDepth <= 0) return null;
-  fullWeights[pseudoSymbol] = maxDepth + 1 - pseudoDepth;
 
-  const numBits = weightsToNumBits(fullWeights, maxDepth);
-  const decodeTable = buildHuffmanDecodeTable(numBits, maxDepth);
+  if (maxSymbol < 255) {
+    const freqWithPseudo = new Uint32Array(257);
+    freqWithPseudo.set(freq, 0);
+    const pseudoSymbol = maxSymbol + 1;
+    freqWithPseudo[pseudoSymbol] = 1;
+    const depths = buildHuffmanDepths(freqWithPseudo);
+    if (!depths) return null;
+    let maxDepth = 0;
+    for (let s = 0; s <= pseudoSymbol; s++) {
+      const d = depths[s] ?? 0;
+      if (d > maxDepth) maxDepth = d;
+    }
+    if (maxDepth <= 0 || maxDepth > 11) return null;
+    maxNumBits = maxDepth;
+
+    weights = new Array<number>(maxSymbol + 1).fill(0);
+    for (let s = 0; s <= maxSymbol; s++) {
+      const d = depths[s] ?? 0;
+      if (d > 0) weights[s] = maxDepth + 1 - d;
+    }
+    for (let i = 0; i < weights.length; i++) fullWeights[i] = weights[i] ?? 0;
+    const pseudoDepth = depths[pseudoSymbol] ?? 0;
+    if (pseudoDepth <= 0) return null;
+    fullWeights[pseudoSymbol] = maxDepth + 1 - pseudoDepth;
+  } else {
+    // For full 0..255 byte alphabets we omit symbol 255 from transmitted weights;
+    // the decoder infers the final symbol weight from the Kraft remainder.
+    const depths = buildHuffmanDepths(freq);
+    if (!depths) return null;
+    let maxDepth = 0;
+    for (let s = 0; s < 256; s++) {
+      const d = depths[s] ?? 0;
+      if (d > maxDepth) maxDepth = d;
+    }
+    if (maxDepth <= 0 || maxDepth > 11) return null;
+    maxNumBits = maxDepth;
+
+    weights = new Array<number>(255).fill(0);
+    for (let s = 0; s < 256; s++) {
+      const d = depths[s] ?? 0;
+      if (d > 0) fullWeights[s] = maxDepth + 1 - d;
+    }
+    if ((fullWeights[255] ?? 0) <= 0) return null;
+    for (let s = 0; s < 255; s++) {
+      weights[s] = fullWeights[s] ?? 0;
+    }
+  }
+
+  if (maxNumBits <= 0) return null;
+  const numBits = weightsToNumBits(fullWeights, maxNumBits);
+  const decodeTable = buildHuffmanDecodeTable(numBits, maxNumBits);
   const codeBySymbol = new Int32Array(256).fill(-1);
   const numBitsBySymbol = new Uint8Array(256);
   for (let i = 0; i < decodeTable.length; i++) {
@@ -177,7 +210,7 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
     const symbol = decodeTable.symbol[i]! >>> 0;
     if (symbol >= codeBySymbol.length) return null;
     if ((codeBySymbol[symbol] ?? -1) < 0) {
-      codeBySymbol[symbol] = i >>> (maxDepth - bits);
+      codeBySymbol[symbol] = i >>> (maxNumBits - bits);
       numBitsBySymbol[symbol] = bits;
     }
   }
@@ -185,7 +218,7 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
     const sym = literals[i] ?? 0;
     if ((codeBySymbol[sym] ?? -1) < 0 || (numBitsBySymbol[sym] ?? 0) === 0) return null;
   }
-  return { weights, table: { maxNumBits: maxDepth, codeBySymbol, numBitsBySymbol } };
+  return { weights, table: { maxNumBits, codeBySymbol, numBitsBySymbol } };
 }
 
 function encodeLiteralsWithTable(
@@ -218,6 +251,93 @@ function splitLiteralsInto4(literals: Uint8Array): [Uint8Array, Uint8Array, Uint
   const s3 = literals.subarray(s1Len + s2Len, s1Len + s2Len + s3Len);
   const s4 = literals.subarray(s1Len + s2Len + s3Len, s1Len + s2Len + s3Len + s4Len);
   return [s1, s2, s3, s4];
+}
+
+interface FSEUpdatePath {
+  states: number[];
+  updateBits: number[];
+  startState: number;
+}
+
+function buildFSEUpdatePath(
+  table: ReturnType<typeof buildFSEDecodeTable>,
+  updateSymbols: readonly number[],
+  requiredFinalSymbol: number | null,
+): FSEUpdatePath | null {
+  const tableSize = table.length;
+  if (tableSize <= 0) return null;
+
+  if (updateSymbols.length === 0) {
+    if (requiredFinalSymbol === null) return null;
+    for (let state = 0; state < tableSize; state++) {
+      if ((table.symbol[state] ?? -1) === requiredFinalSymbol) {
+        return { states: [], updateBits: [], startState: state };
+      }
+    }
+    return null;
+  }
+
+  const rowCount = updateSymbols.length;
+  const reachable = new Uint8Array((rowCount + 1) * tableSize);
+  const nextChoice = new Int32Array(rowCount * tableSize);
+  nextChoice.fill(-1);
+  const rowOffset = (rowIndex: number) => rowIndex * tableSize;
+
+  const finalRowOffset = rowOffset(rowCount);
+  for (let state = 0; state < tableSize; state++) {
+    if (requiredFinalSymbol === null || (table.symbol[state] ?? -1) === requiredFinalSymbol) {
+      reachable[finalRowOffset + state] = 1;
+    }
+  }
+
+  for (let row = rowCount - 1; row >= 0; row--) {
+    const symbol = updateSymbols[row] ?? -1;
+    if (symbol < 0 || symbol > WEIGHT_MAX_SYMBOL) return null;
+    const curOffset = rowOffset(row);
+    const nextOffset = rowOffset(row + 1);
+    let anyReachable = false;
+    for (let state = 0; state < tableSize; state++) {
+      if ((table.symbol[state] ?? -1) !== symbol) continue;
+      const baseline = table.baseline[state] ?? 0;
+      const bits = table.numBits[state] ?? 0;
+      const width = bits > 0 ? 1 << bits : 1;
+      let minNext = baseline;
+      let maxNext = baseline + width - 1;
+      if (minNext < 0) minNext = 0;
+      if (maxNext >= tableSize) maxNext = tableSize - 1;
+      for (let next = minNext; next <= maxNext; next++) {
+        if (reachable[nextOffset + next] === 0) continue;
+        reachable[curOffset + state] = 1;
+        nextChoice[curOffset + state] = next;
+        anyReachable = true;
+        break;
+      }
+    }
+    if (!anyReachable) return null;
+  }
+
+  const startOffset = rowOffset(0);
+  let startState = -1;
+  for (let state = 0; state < tableSize; state++) {
+    if (reachable[startOffset + state] !== 0) {
+      startState = state;
+      break;
+    }
+  }
+  if (startState < 0) return null;
+
+  const states = new Array<number>(rowCount);
+  const updateBits = new Array<number>(rowCount);
+  let state = startState;
+  for (let row = 0; row < rowCount; row++) {
+    states[row] = state;
+    const next = nextChoice[rowOffset(row) + state] ?? -1;
+    if (next < 0) return null;
+    updateBits[row] = next - (table.baseline[state] ?? 0);
+    state = next;
+  }
+
+  return { states, updateBits, startState };
 }
 
 function buildCompressedLiteralsHeader(
@@ -318,6 +438,123 @@ function createDirectWeightsTreeBytes(weights: number[]): Uint8Array | null {
   return tree;
 }
 
+function createFSEWeightsTreeBytes(weights: number[]): Uint8Array | null {
+  if (weights.length < 2 || weights.length > 255) return null;
+  let maxWeight = 0;
+  for (let i = 0; i < weights.length; i++) {
+    const value = weights[i] ?? 0;
+    if (value < 0 || value > WEIGHT_MAX_SYMBOL) return null;
+    if (value > maxWeight) maxWeight = value;
+  }
+
+  const histogram = new Array<number>(maxWeight + 1).fill(0);
+  for (let i = 0; i < weights.length; i++) {
+    const value = weights[i] ?? 0;
+    histogram[value] = (histogram[value] ?? 0) + 1;
+  }
+
+  const stream1: number[] = [];
+  const stream2: number[] = [];
+  for (let i = 0; i < weights.length; i++) {
+    if ((i & 1) === 0) stream1.push(weights[i] ?? 0);
+    else stream2.push(weights[i] ?? 0);
+  }
+  const tailOnStream1 = (weights.length & 1) === 1;
+  const stream1Updates = tailOnStream1 ? stream1.slice(0, -1) : stream1.slice();
+  const stream2Updates = tailOnStream1 ? stream2.slice() : stream2.slice(0, -1);
+  const stream1Tail = tailOnStream1 ? (stream1[stream1.length - 1] ?? null) : null;
+  const stream2Tail = tailOnStream1 ? null : (stream2[stream2.length - 1] ?? null);
+  const updateCount = weights.length - 1;
+  const usedSymbols: number[] = [];
+  for (let symbol = 0; symbol < histogram.length; symbol++) {
+    if ((histogram[symbol] ?? 0) > 0) usedSymbols.push(symbol);
+  }
+  if (usedSymbols.length === 0) return null;
+
+  for (let tableLog = WEIGHT_MAX_TABLE_LOG; tableLog >= 5; tableLog--) {
+    const normalizedCandidates: Array<{ normalizedCounter: number[]; maxSymbolValue: number }> = [];
+    normalizedCandidates.push(normalizeCountsForTable(histogram, tableLog));
+    const tableSize = 1 << tableLog;
+    if (usedSymbols.length <= tableSize) {
+      const uniform = new Array<number>(maxWeight + 1).fill(0);
+      for (let i = 0; i < usedSymbols.length; i++) {
+        const symbol = usedSymbols[i] ?? -1;
+        if (symbol >= 0) uniform[symbol] = 1;
+      }
+      let remaining = tableSize - usedSymbols.length;
+      let cursor = 0;
+      while (remaining > 0) {
+        const symbol = usedSymbols[cursor % usedSymbols.length] ?? -1;
+        if (symbol >= 0) uniform[symbol] = (uniform[symbol] ?? 0) + 1;
+        remaining--;
+        cursor++;
+      }
+      normalizedCandidates.push({ normalizedCounter: uniform, maxSymbolValue: maxWeight });
+    }
+
+    for (const normalized of normalizedCandidates) {
+      const header = writeNCount(normalized.normalizedCounter, normalized.maxSymbolValue, tableLog);
+      const parsed = readNCount(header, 0, WEIGHT_MAX_SYMBOL, WEIGHT_MAX_TABLE_LOG);
+      const table = buildFSEDecodeTable(parsed.normalizedCounter, parsed.tableLog);
+      const path1 = buildFSEUpdatePath(table, stream1Updates, stream1Tail);
+      if (!path1) continue;
+      const path2 = buildFSEUpdatePath(table, stream2Updates, stream2Tail);
+      if (!path2) continue;
+
+      const readCounts = new Uint8Array(2 + updateCount);
+      const readValues = new Uint32Array(2 + updateCount);
+      let readPos = 0;
+      readCounts[readPos] = parsed.tableLog;
+      readValues[readPos++] = path1.startState;
+      readCounts[readPos] = parsed.tableLog;
+      readValues[readPos++] = path2.startState;
+
+      let stream1Pos = 0;
+      let stream2Pos = 0;
+      for (let i = 0; i < updateCount; i++) {
+        if ((i & 1) === 0) {
+          const state = path1.states[stream1Pos] ?? -1;
+          if (state < 0) return null;
+          readCounts[readPos] = table.numBits[state] ?? 0;
+          readValues[readPos++] = path1.updateBits[stream1Pos] ?? 0;
+          stream1Pos++;
+        } else {
+          const state = path2.states[stream2Pos] ?? -1;
+          if (state < 0) return null;
+          readCounts[readPos] = table.numBits[state] ?? 0;
+          readValues[readPos++] = path2.updateBits[stream2Pos] ?? 0;
+          stream2Pos++;
+        }
+      }
+
+      const bitstream = encodeReverseBitstream(readCounts, readValues, new ReverseBitWriter());
+      const bodySize = header.length + bitstream.length;
+      if (bodySize <= 0 || bodySize >= 128) continue;
+      const tree = new Uint8Array(1 + bodySize);
+      tree[0] = bodySize;
+      tree.set(header, 1);
+      tree.set(bitstream, 1 + header.length);
+      const roundTrip = readWeightsFSE(tree, 1, bodySize).weights;
+      if (roundTrip.length !== weights.length) continue;
+      let mismatch = false;
+      for (let i = 0; i < weights.length; i++) {
+        if ((roundTrip[i] ?? -1) !== (weights[i] ?? -1)) {
+          mismatch = true;
+          break;
+        }
+      }
+      if (mismatch) continue;
+      return tree;
+    }
+  }
+
+  return null;
+}
+
+function createWeightsTreeBytes(weights: number[]): Uint8Array | null {
+  return createDirectWeightsTreeBytes(weights) ?? createFSEWeightsTreeBytes(weights);
+}
+
 function canEncodeTreeless(table: LiteralEntropyTable, literals: Uint8Array): boolean {
   for (let i = 0; i < literals.length; i++) {
     const sym = literals[i] ?? 0;
@@ -343,7 +580,7 @@ export function encodeLiteralsSection(
 
   const huffman = buildFrequencyHuffmanTable(literals);
   if (huffman) {
-    const treeBytes = createDirectWeightsTreeBytes(huffman.weights);
+    const treeBytes = createWeightsTreeBytes(huffman.weights);
     if (treeBytes) {
       const compressed = makeCompressedSection(literals, huffman.table, 2, treeBytes, reverseBitWriter);
       if (compressed && compressed.length < bestSection.length) {
@@ -368,7 +605,7 @@ export function encodeLiteralsSection(
 export function buildGeneralCompressedLiteralsForBench(literals: Uint8Array): Uint8Array | null {
   const huffman = buildFrequencyHuffmanTable(literals);
   if (!huffman) return null;
-  const treeBytes = createDirectWeightsTreeBytes(huffman.weights);
+  const treeBytes = createWeightsTreeBytes(huffman.weights);
   if (!treeBytes) return null;
   return makeCompressedSection(literals, huffman.table, 2, treeBytes, new ReverseBitWriter());
 }

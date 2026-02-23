@@ -73,6 +73,24 @@ describe('literals section round-trip', () => {
     expect(decoded.literals).toEqual(literals);
   });
 
+  it('round-trips literals section when bytes include values > 127', () => {
+    const literals = new Uint8Array(6000);
+    for (let i = 0; i < literals.length; i++) {
+      literals[i] = (i & 1) === 0 ? 0x80 : 0x7f;
+    }
+
+    const payload = buildLiteralsSectionPayload(literals);
+    const { header, dataOffset } = parseLiteralsSectionHeader(payload, 0);
+    expect(header.regeneratedSize).toBe(literals.length);
+    if (header.blockType === 2) {
+      const decoded = decodeCompressedLiterals(payload, dataOffset, header.compressedSize!, header.regeneratedSize, header.numStreams);
+      expect(decoded.literals).toEqual(literals);
+    } else {
+      expect(header.blockType).toBe(0);
+      expect(payload.subarray(dataOffset, dataOffset + literals.length)).toEqual(literals);
+    }
+  });
+
   it('round-trips treeless literals section reusing previous table across blocks', () => {
     const firstLiterals = new Uint8Array(2048);
     const secondLiterals = new Uint8Array(2048);

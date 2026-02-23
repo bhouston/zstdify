@@ -442,30 +442,26 @@ function getNormalizedTableCandidates(
       }
       if (matched) continue;
     }
-    try {
-      const { normalizedCounter, maxSymbolValue: normalizedMaxSymbolValue } = normalizeCountsForTable(
-        Array.from(histogram),
-        tableLog,
-      );
-      const header = writeNCount(normalizedCounter, normalizedMaxSymbolValue, tableLog);
-      // Rebuild table from our own serialized header so encoder pathing matches decoder semantics exactly.
-      const parsed = readNCount(header, 0, decodeMaxSymbolValue, maxTableLog);
-      const table = buildFSEDecodeTable(parsed.normalizedCounter, parsed.tableLog);
-      const out: NormalizedTableCacheEntry = {
-        histogram: histogram.slice(0),
-        table,
-        tableLog: parsed.tableLog,
-        header,
-      };
-      if (!cachedBucket) {
-        normalizedTableCache.set(key, [out]);
-      } else {
-        cachedBucket.push(out);
-      }
-      results.push(out);
-    } catch {
-      // Skip invalid normalizations for this table log.
+    const { normalizedCounter, maxSymbolValue: normalizedMaxSymbolValue } = normalizeCountsForTable(
+      Array.from(histogram),
+      tableLog,
+    );
+    const header = writeNCount(normalizedCounter, normalizedMaxSymbolValue, tableLog);
+    // Rebuild table from our own serialized header so encoder pathing matches decoder semantics exactly.
+    const parsed = readNCount(header, 0, decodeMaxSymbolValue, maxTableLog);
+    const table = buildFSEDecodeTable(parsed.normalizedCounter, parsed.tableLog);
+    const out: NormalizedTableCacheEntry = {
+      histogram: histogram.slice(0),
+      table,
+      tableLog: parsed.tableLog,
+      header,
+    };
+    if (!cachedBucket) {
+      normalizedTableCache.set(key, [out]);
+    } else {
+      cachedBucket.push(out);
     }
+    results.push(out);
   }
   return results;
 }
