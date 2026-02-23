@@ -82,6 +82,12 @@ describe('decompressFrame', () => {
     expect(() => decompressFrame(frame, 0, header, null, 4)).toThrowError(/maxSize/i);
   });
 
+  it('rejects from frame header when declared content size exceeds maxSize', () => {
+    const frame = writeFrameHeader(100, false);
+    const { header } = parseZstdFrame(frame, 0);
+    expect(() => decompressFrame(frame, 0, header, null, 10)).toThrowError(/maxSize/i);
+  });
+
   it('rejects treeless literals when no previous Huffman table exists', () => {
     const writer = new BitWriter();
     writer.writeBits(2, 3); // blockType = treeless

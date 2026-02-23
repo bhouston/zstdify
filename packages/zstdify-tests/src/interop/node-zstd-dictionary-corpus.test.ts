@@ -100,6 +100,15 @@ const CASES: DictCase[] = CASE_IDS.map((id) => loadCaseFromFixture(id));
 
 describe('interop: dictionary training (fast minimal cases, zstdify <-> Node zstd)', () => {
   for (const c of CASES) {
+    it(`${c.id}: Node decodes zstdify frame without dictionary`, () => {
+      const zstdifyWithoutDictionary = compress(c.payload, {
+        level: LEVEL,
+      });
+      expect(sha256(nodeDecompressWithoutDictionary(zstdifyWithoutDictionary))).toBe(sha256(c.payload));
+    });
+  }
+
+  for (const c of CASES) {
     it(`${c.id}: zstdify frame without dictionary decodes in both runtimes`, () => {
       const zstdifyWithoutDictionary = compress(c.payload, {
         level: LEVEL,

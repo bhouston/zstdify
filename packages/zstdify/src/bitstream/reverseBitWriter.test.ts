@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encodeReverseBitstream } from './reverseBitWriter.js';
+import { encodeReverseBitstream, ReverseBitWriter } from './reverseBitWriter.js';
 
 function encodeReverseBitstreamReference(bitCounts: ArrayLike<number>, bitValues: ArrayLike<number>): Uint8Array {
   let bitLength = 1; // End marker.
@@ -40,5 +40,38 @@ describe('encodeReverseBitstream', () => {
       bitValues[i] = width === 28 ? 0x0fff_ffff : ((1 << width) - 1) >>> 0;
     }
     expect(encodeReverseBitstream(bitCounts, bitValues)).toEqual(encodeReverseBitstreamReference(bitCounts, bitValues));
+  });
+
+  it('supports explicit writer reuse across a single encode run', () => {
+    const writer = new ReverseBitWriter();
+    const countsA = new Uint8Array([3, 1, 5, 7]);
+    const valuesA = new Uint32Array([0b101, 1, 0b11010, 0b1010110]);
+    const countsB = new Uint8Array([8, 0, 4, 2, 6]);
+    const valuesB = new Uint32Array([0xaa, 0, 0x5, 0x3, 0x2d]);
+
+    expect(encodeReverseBitstream(countsA, valuesA, writer)).toEqual(encodeReverseBitstreamReference(countsA, valuesA));
+    expect(encodeReverseBitstream(countsB, valuesB, writer)).toEqual(encodeReverseBitstreamReference(countsB, valuesB));
+  });
+
+  it('is re-entrant safe when nested encode happens during iteration', () => {
+    const nestedCounts = new Uint8Array([5, 3, 2]);
+    const nestedValues = new Uint32Array([0b11001, 0b111, 0b10]);
+    const counts = [6, 4, 3, 1];
+    const values = [0b101011, 0b1100, 0b101, 1];
+    let triggered = false;
+
+    const reentrantCounts = new Proxy(counts, {
+      get(target, prop, receiver) {
+        if (prop === '2' && !triggered) {
+          triggered = true;
+          encodeReverseBitstream(nestedCounts, nestedValues);
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    const output = encodeReverseBitstream(reentrantCounts, values);
+    expect(output).toEqual(encodeReverseBitstreamReference(counts, values));
+    expect(triggered).toBe(true);
   });
 });

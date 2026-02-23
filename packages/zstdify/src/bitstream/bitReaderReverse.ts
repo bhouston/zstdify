@@ -87,6 +87,17 @@ export class BitReaderReverse {
     return value;
   }
 
+  /** Read n bits and throw if request crosses the logical stream start. */
+  readBitsStrict(n: number): number {
+    if (n < 1 || n > 32) {
+      throw new RangeError(`BitReaderReverse.readBitsStrict: n must be 1-32, got ${n}`);
+    }
+    if (n > this.bitsRemaining) {
+      throw new RangeError('BitReaderReverse: buffer underflow');
+    }
+    return this.readBits(n);
+  }
+
   /**
    * Fast path used by validated hot loops.
    * Falls back to readBits() when the request crosses the logical stream start.
@@ -105,6 +116,17 @@ export class BitReaderReverse {
     const word =
       byteIndex + 3 < this.dataLength ? readU32LEFast(this.data, byteIndex) : readU32LEBounded(this.data, byteIndex);
     return ((word >>> bitInByte) & BIT_MASKS[n]!) >>> 0;
+  }
+
+  /** Fast-path strict variant that forbids crossing stream start. */
+  readBitsFastStrict(n: number): number {
+    if (n < 1 || n > 24) {
+      return this.readBitsStrict(n);
+    }
+    if (n > this.bitsRemaining) {
+      throw new RangeError('BitReaderReverse: buffer underflow');
+    }
+    return this.readBitsFast(n);
   }
 
   /**
@@ -140,6 +162,10 @@ export class BitReaderReverse {
       return this.startBit >>> 3;
     }
     return (this.bitOffset - 1) >>> 3;
+  }
+
+  get bitsRemaining(): number {
+    return this.bitOffset - this.startBit;
   }
 
   /** Skip the first n bits at the logical start (the end of the buffer when reading backward). */

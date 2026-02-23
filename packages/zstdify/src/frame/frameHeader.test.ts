@@ -69,6 +69,14 @@ describe('frameHeader', () => {
     expect(header.dictionaryId).toBe(null);
   });
 
+  it('parses large window size without 32-bit shift overflow', () => {
+    // FHD=0 => non-single-segment, no dict, no content size.
+    // WD=0xff => exponent=31 (windowLog=41), mantissa=7.
+    const data = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x00, 0xff]);
+    const { header } = parseZstdFrame(data, 0);
+    expect(header.windowSize).toBe(4_123_168_604_160);
+  });
+
   it('parses frame with 4-byte content size', () => {
     // FHD: bits 7-6=FCS(2)=4 bytes, bit 5=single=1, bits 1-0=dict=0 -> 0xA0. Then 4 bytes LE = 0x10000.
     const data = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0xa0, 0x00, 0x00, 0x01, 0x00]);

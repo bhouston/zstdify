@@ -35,4 +35,14 @@ describe('skippable frame', () => {
     frame.set(payload, 8);
     expect(skipSkippableFrame(frame, 0)).toBe(12);
   });
+
+  it('skipSkippableFrame throws when payload is truncated', () => {
+    const magic = new Uint8Array([0x50, 0x2a, 0x4d, 0x18]);
+    const sizeBytes = new Uint8Array(4);
+    new DataView(sizeBytes.buffer).setUint32(0, 10, true);
+    const truncated = new Uint8Array(8 + 4);
+    truncated.set(magic, 0);
+    truncated.set(sizeBytes, 4);
+    expect(() => skipSkippableFrame(truncated, 0)).toThrow(/truncated payload/i);
+  });
 });

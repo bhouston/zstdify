@@ -51,4 +51,17 @@ describe('buildGreedySequences', () => {
     expect(output).toEqual(input);
     expect(plan.sequences.length).toBeGreaterThan(0);
   });
+
+  it('reconstructs json-event-like corpus payload in fast mode', () => {
+    const input = new TextEncoder().encode(
+      Array.from(
+        { length: 240 },
+        (_, i) =>
+          `{"event":"view","screen":"home","user":"u-${100 + (i % 30)}","platform":"ios","version":"1.2.0","exp":"A"}`,
+      ).join('\n'),
+    );
+    const plan = buildGreedySequences(input, { strategy: 'fast' });
+    const output = executeSequences(plan.literals, plan.sequences, 128 * 1024);
+    expect(output).toEqual(input);
+  });
 });

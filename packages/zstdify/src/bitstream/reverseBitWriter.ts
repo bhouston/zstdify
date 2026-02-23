@@ -2,7 +2,7 @@
  * LSB-first bit writer used for reverse zstd bitstreams.
  * Callers must write symbols in reverse decode order.
  */
-class ReverseBitWriter {
+export class ReverseBitWriter {
   private buffer = new Uint8Array(0);
   private outputSize = 0;
   private writePos = 0;
@@ -51,20 +51,22 @@ class ReverseBitWriter {
   }
 }
 
-const sharedReverseBitWriter = new ReverseBitWriter();
-
-export function encodeReverseBitstream(bitCounts: ArrayLike<number>, bitValues: ArrayLike<number>): Uint8Array {
+export function encodeReverseBitstream(
+  bitCounts: ArrayLike<number>,
+  bitValues: ArrayLike<number>,
+  writer: ReverseBitWriter = new ReverseBitWriter(),
+): Uint8Array {
   let bitLength = 1; // End marker bit.
   for (let i = 0; i < bitCounts.length; i++) {
     const n = bitCounts[i] ?? 0;
     if (n > 0) bitLength += n;
   }
 
-  sharedReverseBitWriter.reset(bitLength);
+  writer.reset(bitLength);
   for (let i = bitCounts.length - 1; i >= 0; i--) {
     const n = bitCounts[i] ?? 0;
-    if (n > 0) sharedReverseBitWriter.writeBits(n, bitValues[i] ?? 0);
+    if (n > 0) writer.writeBits(n, bitValues[i] ?? 0);
   }
-  sharedReverseBitWriter.writeBits(1, 1);
-  return sharedReverseBitWriter.finish();
+  writer.writeBits(1, 1);
+  return writer.finish();
 }

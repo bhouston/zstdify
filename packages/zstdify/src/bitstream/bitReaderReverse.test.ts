@@ -14,14 +14,14 @@ describe('BitReaderReverse', () => {
   it('zero-fills when reading past stream start', () => {
     const reader = new BitReaderReverse(new Uint8Array([0x80]), 0, 1);
     reader.skipPadding();
-    // No payload bits remain after padding; reading still succeeds with zeros.
-    expect(reader.readBits(4)).toBe(0);
+    expect(reader.readBits(1)).toBe(0);
   });
 
   it('position returns start byte when bitOffset <= startBit', () => {
     const reader = new BitReaderReverse(new Uint8Array([0x80]), 0, 1);
     reader.skipPadding();
-    reader.readBits(4); // consume remaining (zeros)
+    reader.readBits(8); // consume and clamp past logical start
+    expect(reader.bitsRemaining).toBe(0);
     expect(reader.position).toBe(0);
   });
 
@@ -63,5 +63,17 @@ describe('BitReaderReverse', () => {
     for (const width of widths) {
       expect(fast.readBitsFast(width)).toBe(safe.readBits(width));
     }
+  });
+
+  it('readBitsStrict rejects crossing the logical stream start', () => {
+    const reader = new BitReaderReverse(new Uint8Array([0x80]), 0, 1);
+    reader.skipPadding();
+    expect(() => reader.readBitsStrict(8)).toThrow(/underflow|RangeError/i);
+  });
+
+  it('readBitsFastStrict rejects crossing the logical stream start', () => {
+    const reader = new BitReaderReverse(new Uint8Array([0x80]), 0, 1);
+    reader.skipPadding();
+    expect(() => reader.readBitsFastStrict(8)).toThrow(/underflow|RangeError/i);
   });
 });

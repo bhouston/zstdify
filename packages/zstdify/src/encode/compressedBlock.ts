@@ -1,4 +1,4 @@
-import { encodeReverseBitstream } from '../bitstream/reverseBitWriter.js';
+import { encodeReverseBitstream, ReverseBitWriter } from '../bitstream/reverseBitWriter.js';
 import type { Sequence } from '../decode/reconstruct.js';
 import { buildFSEDecodeTable, type FSEDecodeTable, normalizeCountsForTable, writeNCount } from '../entropy/fse.js';
 import {
@@ -55,10 +55,7 @@ function writeU24LE(arr: Uint8Array, offset: number, value: number): void {
   arr[offset + 2] = (value >> 16) & 0xff;
 }
 
-const U32_ALL_BITS = 0xffff_ffff >>> 0;
 const pathTableCache = new WeakMap<FSEDecodeTable, PrecomputedPathTable>();
-let pathMasksScratch: Uint32Array | null = null;
-let pathNextChoiceScratch: Int32Array | null = null;
 let sequenceReadCountsScratch: Uint8Array | null = null;
 let sequenceReadValuesScratch: Uint32Array | null = null;
 
@@ -85,84 +82,6 @@ interface SequenceTablesState {
 export interface SequenceEntropyContext {
   prevTables: SequenceTablesState | null;
   prevLiteralsTable?: LiteralEntropyTable | null;
-}
-
-function rangeMask(startBit: number, endBit: number): number {
-  if (startBit === 0 && endBit === 31) return U32_ALL_BITS;
-  const startMask = (U32_ALL_BITS << startBit) >>> 0;
-  const endMask = endBit === 31 ? U32_ALL_BITS : ((1 << (endBit + 1)) - 1) >>> 0;
-  return (startMask & endMask) >>> 0;
-}
-
-function setMaskBit(mask: Uint32Array, maskOffset: number, bit: number): void {
-  const word = bit >>> 5;
-  mask[maskOffset + word] = (mask[maskOffset + word]! | (1 << (bit & 31))) >>> 0;
-}
-
-function isMaskEmpty(mask: Uint32Array, maskOffset: number, wordCount: number): boolean {
-  for (let i = 0; i < wordCount; i++) {
-    if ((mask[maskOffset + i] ?? 0) !== 0) return false;
-  }
-  return true;
-}
-
-function firstBitInWord(word: number): number {
-  const normalized = word >>> 0;
-  const lsb = (normalized & -normalized) >>> 0;
-  return 31 - Math.clz32(lsb);
-}
-
-function findFirstSetBit(mask: Uint32Array, maskOffset: number, wordCount: number): number {
-  for (let wi = 0; wi < wordCount; wi++) {
-    const word = mask[maskOffset + wi] ?? 0;
-    if (word !== 0) {
-      return (wi << 5) + firstBitInWord(word);
-    }
-  }
-  return -1;
-}
-
-function codesAreUniform(codes: ArrayLike<number>): number {
-  if (codes.length === 0) return -1;
-  const first = codes[0] ?? -1;
-  for (let i = 1; i < codes.length; i++) {
-    if ((codes[i] ?? -1) !== first) return -1;
-  }
-  return first;
-}
-
-function findFirstSetBitInRange(
-  mask: Uint32Array,
-  maskOffset: number,
-  wordCount: number,
-  minState: number,
-  maxState: number,
-): number {
-  if (wordCount <= 0) return -1;
-  let min = minState;
-  let max = maxState;
-  const maxBit = (wordCount << 5) - 1;
-  if (min < 0) min = 0;
-  if (max > maxBit) max = maxBit;
-  if (min > max) return -1;
-  const startWord = min >>> 5;
-  const endWord = max >>> 5;
-  if (startWord === endWord) {
-    const masked = ((mask[maskOffset + startWord] ?? 0) & rangeMask(min & 31, max & 31)) >>> 0;
-    if (masked === 0) return -1;
-    return (startWord << 5) + firstBitInWord(masked);
-  }
-  const firstMasked = ((mask[maskOffset + startWord] ?? 0) & rangeMask(min & 31, 31)) >>> 0;
-  if (firstMasked !== 0) {
-    return (startWord << 5) + firstBitInWord(firstMasked);
-  }
-  for (let wi = startWord + 1; wi < endWord; wi++) {
-    const word = mask[maskOffset + wi] ?? 0;
-    if (word !== 0) return (wi << 5) + firstBitInWord(word);
-  }
-  const lastMasked = ((mask[maskOffset + endWord] ?? 0) & rangeMask(0, max & 31)) >>> 0;
-  if (lastMasked === 0) return -1;
-  return (endWord << 5) + firstBitInWord(lastMasked);
 }
 
 function getPrecomputedPathTable(table: FSEDecodeTable): PrecomputedPathTable {
@@ -217,21 +136,6 @@ function getPrecomputedPathTable(table: FSEDecodeTable): PrecomputedPathTable {
   };
   pathTableCache.set(table, precomputed);
   return precomputed;
-}
-
-function getPathMasksScratch(requiredLength: number): Uint32Array {
-  if (!pathMasksScratch || pathMasksScratch.length < requiredLength) {
-    pathMasksScratch = new Uint32Array(requiredLength);
-  }
-  pathMasksScratch.fill(0, 0, requiredLength);
-  return pathMasksScratch;
-}
-
-function getPathNextChoiceScratch(requiredLength: number): Int32Array {
-  if (!pathNextChoiceScratch || pathNextChoiceScratch.length < requiredLength) {
-    pathNextChoiceScratch = new Int32Array(requiredLength);
-  }
-  return pathNextChoiceScratch;
 }
 
 function getSequenceReadCountsScratch(requiredLength: number): Uint8Array {
@@ -294,101 +198,80 @@ function buildStatePath(
 ): { states: number[]; updateBits: number[] } | null {
   if (codes.length === 0) return { states: [], updateBits: [] };
   const pre = getPrecomputedPathTable(table);
-  const { tableSize, wordCount, statesBySymbol, symbolMasks, minNextByState, maxNextByState, baselineByState } = pre;
+  const { tableSize, statesBySymbol, baselineByState } = pre;
   if (tableSize <= 0) return null;
   const rowCount = codes.length;
-  if (rowCount === 1) {
-    const onlyCode = codes[0] ?? -1;
-    if (onlyCode < 0 || onlyCode >= statesBySymbol.length) return null;
-    const onlyStates = statesBySymbol[onlyCode];
-    if (!onlyStates || onlyStates.length === 0) return null;
-    const firstState = onlyStates[0];
-    if (firstState === undefined) return null;
-    return { states: [firstState], updateBits: [] };
-  }
-  const uniformCode = codesAreUniform(codes);
-  if (uniformCode >= 0 && uniformCode < statesBySymbol.length) {
-    const candidateStates = statesBySymbol[uniformCode];
-    const candidateMask = symbolMasks[uniformCode];
-    if (!candidateStates || candidateStates.length === 0 || !candidateMask) return null;
-    for (let startIndex = 0; startIndex < candidateStates.length; startIndex++) {
-      const startState = candidateStates[startIndex];
-      if (startState === undefined) continue;
-      const states: number[] = new Array(rowCount);
-      const updateBits: number[] = new Array(rowCount - 1);
-      states[0] = startState;
-      let state = startState;
-      let valid = true;
-      for (let row = 0; row < rowCount - 1; row++) {
-        const nextState = findFirstSetBitInRange(
-          candidateMask,
-          0,
-          wordCount,
-          minNextByState[state]!,
-          maxNextByState[state]!,
-        );
-        if (nextState < 0) {
-          valid = false;
-          break;
-        }
-        states[row + 1] = nextState;
-        updateBits[row] = nextState - baselineByState[state]!;
-        state = nextState;
-      }
-      if (valid) return { states, updateBits };
-    }
-  }
-  const masks = getPathMasksScratch(rowCount * wordCount);
-  const nextChoice = getPathNextChoiceScratch(Math.max(0, rowCount - 1) * tableSize);
-  const maskOffset = (rowIndex: number) => rowIndex * wordCount;
-  const nextChoiceOffset = (rowIndex: number) => rowIndex * tableSize;
-  const lastCode = codes[rowCount - 1] ?? -1;
-  if (lastCode < 0 || lastCode >= symbolMasks.length) return null;
-  const lastMask = symbolMasks[lastCode];
-  if (!lastMask) return null;
-  const lastMaskOffset = maskOffset(rowCount - 1);
-  for (let wi = 0; wi < wordCount; wi++) {
-    masks[lastMaskOffset + wi] = lastMask[wi]!;
-  }
-  if (isMaskEmpty(masks, lastMaskOffset, wordCount)) return null;
+  const reachable = new Uint8Array(rowCount * tableSize);
+  const nextChoice = new Int32Array(Math.max(0, rowCount - 1) * tableSize);
+  nextChoice.fill(-1);
+  const rowOffset = (rowIndex: number) => rowIndex * tableSize;
 
-  for (let i = rowCount - 2; i >= 0; i--) {
-    const code = codes[i] ?? -1;
+  const lastCode = codes[rowCount - 1] ?? -1;
+  if (lastCode < 0 || lastCode >= statesBySymbol.length) return null;
+  const lastStates = statesBySymbol[lastCode];
+  if (!lastStates || lastStates.length === 0) return null;
+  const lastRowOffset = rowOffset(rowCount - 1);
+  for (let i = 0; i < lastStates.length; i++) {
+    const state = lastStates[i];
+    if (state !== undefined) reachable[lastRowOffset + state] = 1;
+  }
+
+  for (let row = rowCount - 2; row >= 0; row--) {
+    const code = codes[row] ?? -1;
     if (code < 0 || code >= statesBySymbol.length) return null;
-    const candidates = statesBySymbol[code];
-    if (!candidates || candidates.length === 0) return null;
-    const curMaskOffset = maskOffset(i);
-    const nextMaskOffset = maskOffset(i + 1);
-    const curNextOffset = nextChoiceOffset(i);
-    for (let ci = 0; ci < candidates.length; ci++) {
-      const state = candidates[ci];
+    const candidateStates = statesBySymbol[code];
+    if (!candidateStates || candidateStates.length === 0) return null;
+    const curRowOffset = rowOffset(row);
+    const nextRowOffset = rowOffset(row + 1);
+    let anyReachable = false;
+    for (let i = 0; i < candidateStates.length; i++) {
+      const state = candidateStates[i];
       if (state === undefined) continue;
-      const chosenNext = findFirstSetBitInRange(
-        masks,
-        nextMaskOffset,
-        wordCount,
-        minNextByState[state]!,
-        maxNextByState[state]!,
-      );
-      if (chosenNext >= 0) {
-        setMaskBit(masks, curMaskOffset, state);
-        nextChoice[curNextOffset + state] = chosenNext;
+      const baseline = table.baseline[state]!;
+      const bits = table.numBits[state]!;
+      const width = bits > 0 ? 1 << bits : 1;
+      let minNext = baseline;
+      let maxNext = baseline + width - 1;
+      if (minNext < 0) minNext = 0;
+      if (maxNext >= tableSize) maxNext = tableSize - 1;
+      for (let next = minNext; next <= maxNext; next++) {
+        if (reachable[nextRowOffset + next] === 0) continue;
+        reachable[curRowOffset + state] = 1;
+        nextChoice[curRowOffset + state] = next;
+        anyReachable = true;
+        break;
       }
     }
-    if (isMaskEmpty(masks, curMaskOffset, wordCount)) return null;
+    if (!anyReachable) return null;
   }
+
+  const firstCode = codes[0] ?? -1;
+  if (firstCode < 0 || firstCode >= statesBySymbol.length) return null;
+  const firstStates = statesBySymbol[firstCode];
+  if (!firstStates || firstStates.length === 0) return null;
+  const firstRowOffset = rowOffset(0);
+  let startState = -1;
+  for (let i = 0; i < firstStates.length; i++) {
+    const state = firstStates[i];
+    if (state !== undefined && reachable[firstRowOffset + state] !== 0) {
+      startState = state;
+      break;
+    }
+  }
+  if (startState < 0) return null;
 
   const states: number[] = new Array(rowCount);
   const updateBits: number[] = new Array(Math.max(0, rowCount - 1));
-  let state = findFirstSetBit(masks, maskOffset(0), wordCount);
-  if (state < 0) return null;
-  states[0] = state;
-  for (let i = 0; i < rowCount - 1; i++) {
-    const nextState = nextChoice[nextChoiceOffset(i) + state]!;
-    states[i + 1] = nextState;
-    updateBits[i] = nextState - baselineByState[state]!;
-    state = nextState;
+  states[0] = startState;
+  let state = startState;
+  for (let row = 0; row < rowCount - 1; row++) {
+    const choice = nextChoice[rowOffset(row) + state] ?? -1;
+    if (choice < 0) return null;
+    states[row + 1] = choice;
+    updateBits[row] = choice - baselineByState[state]!;
+    state = choice;
   }
+
   return { states, updateBits };
 }
 
@@ -631,6 +514,15 @@ function chooseStreamMode(
   const histogram = alphabetSize > 0 ? buildHistogram(codes, alphabetSize) : new Uint32Array(0);
   const predefinedPath = buildStatePath(codes, predefinedTable);
   if (!predefinedPath) return null;
+  if (process.env.ZSTDIFY_ENABLE_COMPRESSED_SEQUENCE_TABLES !== '1') {
+    return {
+      mode: 0,
+      table: predefinedTable,
+      tableLog: predefinedTableLog,
+      path: predefinedPath,
+      tableHeader: new Uint8Array(0),
+    };
+  }
   let best: StreamChoice = {
     mode: 0,
     table: predefinedTable,
@@ -701,6 +593,7 @@ function chooseStreamMode(
 function buildSequenceSection(
   sequences: readonly Sequence[],
   context?: SequenceEntropyContext,
+  reverseBitWriter: ReverseBitWriter = new ReverseBitWriter(),
 ): { section: Uint8Array; tables: SequenceTablesState } | null {
   const encoded = symbolizedSequences(sequences);
   if (!encoded) return null;
@@ -786,7 +679,7 @@ function buildSequenceSection(
     }
   }
 
-  const bitstream = encodeReverseBitstream(readCounts, readValues);
+  const bitstream = encodeReverseBitstream(readCounts, readValues, reverseBitWriter);
   const tableHeaderSize = llChoice.tableHeader.length + ofChoice.tableHeader.length + mlChoice.tableHeader.length;
   const out = new Uint8Array(numSequencesBytes.length + 1 + tableHeaderSize + bitstream.length);
   out.set(numSequencesBytes, 0);
@@ -818,13 +711,14 @@ export function buildCompressedBlockPayload(
   sequences: Sequence[],
   context?: SequenceEntropyContext,
 ): Uint8Array | null {
+  const reverseBitWriter = new ReverseBitWriter();
   const literalsContext: LiteralEntropyContext = {
     prevTable: context?.prevLiteralsTable ?? null,
   };
-  const encodedLiterals = encodeLiteralsSection(literals, literalsContext);
+  const encodedLiterals = encodeLiteralsSection(literals, literalsContext, reverseBitWriter);
   if (!encodedLiterals) return null;
   const literalsSection = encodedLiterals.section;
-  const seqSection = buildSequenceSection(sequences, context);
+  const seqSection = buildSequenceSection(sequences, context, reverseBitWriter);
   if (!seqSection) return null;
   const out = new Uint8Array(literalsSection.length + seqSection.section.length);
   out.set(literalsSection, 0);

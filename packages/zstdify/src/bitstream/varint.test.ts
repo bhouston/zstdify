@@ -24,4 +24,26 @@ describe('varint', () => {
     expect(value).toBe(128);
     expect(bytesRead).toBe(2);
   });
+
+  it('round-trips max uint32', () => {
+    const max = 0xffff_ffff;
+    const encoded = encodeVarint(max);
+    const { value, bytesRead } = decodeVarint(encoded, 0);
+    expect(value).toBe(max);
+    expect(bytesRead).toBe(encoded.length);
+  });
+
+  it('rejects encode inputs outside uint32', () => {
+    expect(() => encodeVarint(-1)).toThrow(/uint32|RangeError/i);
+    expect(() => encodeVarint(1.5)).toThrow(/uint32|RangeError/i);
+    expect(() => encodeVarint(0x1_0000_0000)).toThrow(/uint32|RangeError/i);
+  });
+
+  it('rejects malformed decode inputs outside uint32 varint bounds', () => {
+    expect(() => decodeVarint(new Uint8Array([0x80, 0x80, 0x80, 0x80, 0x80, 0x00]), 0)).toThrow(
+      /exceeds 5 bytes|RangeError/i,
+    );
+    expect(() => decodeVarint(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x1f]), 0)).toThrow(/too large|RangeError/i);
+    expect(() => decodeVarint(new Uint8Array([0x01]), -1)).toThrow(/offset|RangeError/i);
+  });
 });

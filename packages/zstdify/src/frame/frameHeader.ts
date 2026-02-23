@@ -63,7 +63,7 @@ export function parseFrameHeader(data: Uint8Array, offset: number): FrameHeader 
     const exponent = (wd >> 3) & 0x1f;
     const mantissa = wd & 7;
     const windowLog = 10 + exponent;
-    const windowBase = 1 << windowLog;
+    const windowBase = 2 ** windowLog;
     const windowAdd = (windowBase / 8) * mantissa;
     windowSize = windowBase + windowAdd;
   }

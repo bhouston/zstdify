@@ -1,5 +1,5 @@
 import { BitWriter } from '../bitstream/bitWriter.js';
-import { encodeReverseBitstream } from '../bitstream/reverseBitWriter.js';
+import { encodeReverseBitstream, ReverseBitWriter } from '../bitstream/reverseBitWriter.js';
 import { buildHuffmanDecodeTable, weightsToNumBits } from '../entropy/huffman.js';
 
 export interface LiteralEntropyTable {
@@ -186,7 +186,11 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
   return { weights, table: { maxNumBits: maxDepth, codeBySymbol, numBitsBySymbol } };
 }
 
-function encodeLiteralsWithTable(table: LiteralEntropyTable, literals: Uint8Array): Uint8Array | null {
+function encodeLiteralsWithTable(
+  table: LiteralEntropyTable,
+  literals: Uint8Array,
+  reverseBitWriter: ReverseBitWriter,
+): Uint8Array | null {
   const scratch = ensureLiteralBitScratch(literals.length);
   const bitCounts = scratch.counts.subarray(0, literals.length);
   const bitValues = scratch.values.subarray(0, literals.length);
@@ -198,7 +202,7 @@ function encodeLiteralsWithTable(table: LiteralEntropyTable, literals: Uint8Arra
     bitCounts[i] = bits;
     bitValues[i] = code;
   }
-  return encodeReverseBitstream(bitCounts, bitValues);
+  return encodeReverseBitstream(bitCounts, bitValues, reverseBitWriter);
 }
 
 function splitLiteralsInto4(literals: Uint8Array): [Uint8Array, Uint8Array, Uint8Array, Uint8Array] {
@@ -234,8 +238,9 @@ function makeCompressedSection(
   table: LiteralEntropyTable,
   blockType: 2 | 3,
   treeBytes: Uint8Array,
+  reverseBitWriter: ReverseBitWriter,
 ): Uint8Array | null {
-  const oneStream = encodeLiteralsWithTable(table, literals);
+  const oneStream = encodeLiteralsWithTable(table, literals, reverseBitWriter);
   let bestPayload: Uint8Array | null = null;
   let bestSizeFormat: 0 | 1 | 2 | 3 | null = null;
 
@@ -251,10 +256,10 @@ function makeCompressedSection(
 
   if (literals.length >= 16) {
     const [s1, s2, s3, s4] = splitLiteralsInto4(literals);
-    const e1 = encodeLiteralsWithTable(table, s1);
-    const e2 = encodeLiteralsWithTable(table, s2);
-    const e3 = encodeLiteralsWithTable(table, s3);
-    const e4 = encodeLiteralsWithTable(table, s4);
+    const e1 = encodeLiteralsWithTable(table, s1, reverseBitWriter);
+    const e2 = encodeLiteralsWithTable(table, s2, reverseBitWriter);
+    const e3 = encodeLiteralsWithTable(table, s3, reverseBitWriter);
+    const e4 = encodeLiteralsWithTable(table, s4, reverseBitWriter);
     if (e1 && e2 && e3 && e4 && e1.length <= 0xffff && e2.length <= 0xffff && e3.length <= 0xffff) {
       const streamsSize = 6 + e1.length + e2.length + e3.length + e4.length;
       const compressedSize = treeBytes.length + streamsSize;
@@ -322,6 +327,7 @@ function canEncodeTreeless(table: LiteralEntropyTable, literals: Uint8Array): bo
 export function encodeLiteralsSection(
   literals: Uint8Array,
   context?: LiteralEntropyContext,
+  reverseBitWriter: ReverseBitWriter = new ReverseBitWriter(),
 ): EncodedLiteralsSection | null {
   const raw = buildRawLiteralsSection(literals);
   if (!raw) return null;
@@ -337,7 +343,7 @@ export function encodeLiteralsSection(
   if (huffman) {
     const treeBytes = createDirectWeightsTreeBytes(huffman.weights);
     if (treeBytes) {
-      const compressed = makeCompressedSection(literals, huffman.table, 2, treeBytes);
+      const compressed = makeCompressedSection(literals, huffman.table, 2, treeBytes, reverseBitWriter);
       if (compressed && compressed.length < bestSection.length) {
         bestSection = compressed;
         bestTable = huffman.table;
@@ -347,7 +353,7 @@ export function encodeLiteralsSection(
 
   const prev = context?.prevTable ?? null;
   if (prev && canEncodeTreeless(prev, literals)) {
-    const treeless = makeCompressedSection(literals, prev, 3, new Uint8Array(0));
+    const treeless = makeCompressedSection(literals, prev, 3, new Uint8Array(0), reverseBitWriter);
     if (treeless && treeless.length < bestSection.length) {
       bestSection = treeless;
       bestTable = prev;
@@ -362,5 +368,5 @@ export function buildGeneralCompressedLiteralsForBench(literals: Uint8Array): Ui
   if (!huffman) return null;
   const treeBytes = createDirectWeightsTreeBytes(huffman.weights);
   if (!treeBytes) return null;
-  return makeCompressedSection(literals, huffman.table, 2, treeBytes);
+  return makeCompressedSection(literals, huffman.table, 2, treeBytes, new ReverseBitWriter());
 }

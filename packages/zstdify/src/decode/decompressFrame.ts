@@ -38,6 +38,9 @@ export function decompressFrame(
 ): { output: Uint8Array; bytesConsumed: number } {
   let pos = offset + 4 + header.headerSize;
   const knownOutputSize = header.contentSize ?? null;
+  if (knownOutputSize !== null && maxSize !== undefined && knownOutputSize > maxSize) {
+    throw new ZstdError('Decompressed size exceeds maxSize', 'parameter_unsupported');
+  }
   let outputBuffer = knownOutputSize !== null ? new Uint8Array(knownOutputSize) : new Uint8Array(0);
   let totalSize = 0;
   const repOffsets: [number, number, number] = dictionary?.repOffsets
