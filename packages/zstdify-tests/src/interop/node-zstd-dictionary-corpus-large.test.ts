@@ -37,13 +37,6 @@ function nodeCompressWithDictionary(data: Uint8Array, dictionary: Uint8Array): B
   });
 }
 
-function nodeCompressWithoutDictionary(data: Uint8Array): Buffer {
-  const params: Record<number, number> = {
-    [zlib.constants.ZSTD_c_compressionLevel]: LEVEL,
-  };
-  return zlib.zstdCompressSync(Buffer.from(data), { params });
-}
-
 function nodeDecompressWithDictionary(data: Uint8Array, dictionary: Uint8Array): Uint8Array {
   return new Uint8Array(
     zlib.zstdDecompressSync(Buffer.from(data), {
@@ -52,18 +45,19 @@ function nodeDecompressWithDictionary(data: Uint8Array, dictionary: Uint8Array):
   );
 }
 
+function nodeDecompressWithoutDictionary(data: Uint8Array): Uint8Array {
+  return new Uint8Array(zlib.zstdDecompressSync(Buffer.from(data)));
+}
+
 const CORPUS_PAYLOADS = loadLocalBenchCorpusForTests().map((payload) => ({
   id: payload.id,
   category: payload.category,
   data: payload.data,
 }));
 
-const RUN_LARGE_DICTIONARY_TESTS = process.env.ZSTDIFY_RUN_LARGE_DICTIONARY_TESTS === '1';
-const describeLarge = RUN_LARGE_DICTIONARY_TESTS ? describe : describe.skip;
-
-describeLarge('interop: dictionary training on real corpus (large, for later)', () => {
+describe('interop: dictionary training on real corpus (large, for later)', () => {
   for (const payload of CORPUS_PAYLOADS) {
-    it(`${payload.id} (${payload.category}): Node ratio improves and both runtimes decode dictionary frames`, () => {
+    it(`${payload.id} (${payload.category}): zstdify dictionary compression is no worse and both runtimes decode dictionary frames`, () => {
       const trainingSamples = makeTrainingSamples(payload.data);
       const dictionary = generateDictionary(trainingSamples, {
         maxDictSize: DICT_SIZE_BYTES,
@@ -71,11 +65,11 @@ describeLarge('interop: dictionary training on real corpus (large, for later)', 
       });
       expect(dictionary.length).toBeGreaterThan(0);
 
-      const nodeWithoutDictionary = nodeCompressWithoutDictionary(payload.data);
-      const nodeWithDictionary = nodeCompressWithDictionary(payload.data, dictionary);
-      expect(nodeWithDictionary.length).toBeLessThan(nodeWithoutDictionary.length);
-
-      expect(decompress(nodeWithDictionary, { dictionary })).toEqual(payload.data);
+      const zstdifyWithoutDictionary = compress(payload.data, {
+        level: LEVEL,
+      });
+      expect(decompress(zstdifyWithoutDictionary)).toEqual(payload.data);
+      expect(nodeDecompressWithoutDictionary(zstdifyWithoutDictionary)).toEqual(payload.data);
 
       const zstdifyWithDictionary = compress(payload.data, {
         level: LEVEL,
@@ -84,6 +78,13 @@ describeLarge('interop: dictionary training on real corpus (large, for later)', 
       });
       expect(decompress(zstdifyWithDictionary, { dictionary })).toEqual(payload.data);
       expect(nodeDecompressWithDictionary(zstdifyWithDictionary, dictionary)).toEqual(payload.data);
+
+      // Keep Node dictionary compression in the test to validate interop on dictionary frames from Node.
+      const nodeWithDictionary = nodeCompressWithDictionary(payload.data, dictionary);
+      expect(decompress(nodeWithDictionary, { dictionary })).toEqual(payload.data);
+      expect(nodeDecompressWithDictionary(nodeWithDictionary, dictionary)).toEqual(payload.data);
+
+      expect(zstdifyWithDictionary.length).toBeLessThan(zstdifyWithoutDictionary.length);
     });
   }
 });
