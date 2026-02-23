@@ -182,6 +182,7 @@ export function decompressFrame(
           repOffsets,
           history,
           !block.lastBlock,
+          !!onBlockDecoded,
         );
         prevSeqTables = tables;
         if (onBlockDecoded) {

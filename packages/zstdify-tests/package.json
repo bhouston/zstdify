@@ -14,6 +14,8 @@
     "bench:decode:assert": "node scripts/assert-decode-bench.ts",
     "bench:decode:gated": "pnpm run bench:decode-only && pnpm run bench:decode:assert",
     "bench:decode-profile": "pnpm run bench:prepare && node --cpu-prof --cpu-prof-name=zstdify-decode-profile.cpuprofile scripts/benchmark-decode-profile.ts",
+    "bench:decode-profile:zstdify-node": "pnpm run bench:prepare && node --cpu-prof --cpu-prof-name=zstdify-decode-node-profile.cpuprofile scripts/benchmark-decode-profile-zstdify-node.ts",
+    "bench:decode-profile:fzstd-node": "pnpm run bench:prepare && node --cpu-prof --cpu-prof-name=fzstd-decode-node-profile.cpuprofile scripts/benchmark-decode-profile-fzstd-node.ts",
     "bench:encode-profile": "pnpm run bench:prepare && node --cpu-prof --cpu-prof-name=zstdify-encode-profile.cpuprofile scripts/benchmark-encode-profile.ts",
     "bench:micro-hotpaths": "pnpm run bench:prepare && node scripts/benchmark-micro-hotpaths.ts",
     "bench:bundle-size": "pnpm run bench:prepare && node scripts/benchmark-bundle-size.ts",

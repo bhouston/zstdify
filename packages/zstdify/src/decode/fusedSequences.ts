@@ -86,6 +86,7 @@ export function decodeAndExecuteSequencesInto(
   repOffsets: [number, number, number],
   history: HistoryWindow,
   updateHistory: boolean,
+  collectMetadata = true,
 ): FusedDecodeExecuteResult {
   if (seqSize < 2) {
     throw new ZstdError('Sequences section too short', 'corruption_detected');
@@ -226,46 +227,65 @@ export function decodeAndExecuteSequencesInto(
     const ofBaselineByState = ofTable.baseline;
     const mlBaselineByState = mlTable.baseline;
 
-    const executeOne = (ov: number, ll: number, ml: number): void => {
-      if (ov <= 2 || (ov === 3 && ll > 0)) {
-        repeatOffsetCandidateCount++;
-      }
-      totalMatchLength += ml;
+    const lastSequenceIndex = numSequences - 1;
+    for (let i = 0; i <= lastSequenceIndex; i++) {
+      const offsetCode = ofSymbolByState[stateOF]!;
+      const mlCode = mlSymbolByState[stateML]!;
+      const llCode = llSymbolByState[stateLL]!;
 
-      if (ll > 0) {
-        const litEnd = litPos + ll;
+      const offsetValue = (1 << offsetCode) + reader.readBitsFastOrZero(offsetCode);
+      if (mlCode >= ML_BASELINE.length) throw new ZstdError('Invalid match length code', 'corruption_detected');
+      if (llCode >= LL_BASELINE.length) throw new ZstdError('Invalid literals length code', 'corruption_detected');
+
+      const mlNumBits = ML_NUMBITS[mlCode]!;
+      const mlBase = ML_BASELINE[mlCode]!;
+      const matchLength = mlBase + reader.readBitsFastOrZero(mlNumBits);
+
+      const llNumBits = LL_NUMBITS[llCode]!;
+      const llBase = LL_BASELINE[llCode]!;
+      const literalsLength = llCode <= 15 ? llCode : llBase + reader.readBitsFastOrZero(llNumBits);
+
+      if (collectMetadata) {
+        if (offsetValue <= 2 || (offsetValue === 3 && literalsLength > 0)) {
+          repeatOffsetCandidateCount++;
+        }
+        totalMatchLength += matchLength;
+      }
+
+      if (literalsLength > 0) {
+        const litEnd = litPos + literalsLength;
         if (litEnd > literals.length) {
           throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
         }
-        if (ll <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
-          for (let i = 0; i < ll; i++) {
-            output[outPos + i] = literals[litPos + i]!;
+        if (literalsLength <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
+          for (let j = 0; j < literalsLength; j++) {
+            output[outPos + j] = literals[litPos + j]!;
           }
         } else {
           output.set(literals.subarray(litPos, litEnd), outPos);
         }
-        outPos += ll;
+        outPos += literalsLength;
         litPos = litEnd;
       }
 
-      const ll0 = ll === 0;
+      const ll0 = literalsLength === 0;
       let offset: number;
       let repeatIndex: 0 | 1 | 2 | null = null;
-      const isNonRepeat = ov > 3 || (ov === 3 && ll0);
+      const isNonRepeat = offsetValue > 3 || (offsetValue === 3 && ll0);
       if (isNonRepeat) {
-        if (ov === 3) {
+        if (offsetValue === 3) {
           offset = rep0 - 1;
           if (offset === 0) {
             throw new ZstdError('Invalid match offset: repeat1-1 is 0', 'corruption_detected');
           }
         } else {
-          offset = ov - 3;
+          offset = offsetValue - 3;
         }
       } else {
         if (ll0) {
-          repeatIndex = ov === 1 ? 1 : 2;
+          repeatIndex = offsetValue === 1 ? 1 : 2;
         } else {
-          repeatIndex = (ov - 1) as 0 | 1 | 2;
+          repeatIndex = (offsetValue - 1) as 0 | 1 | 2;
         }
         offset = repeatIndex === 0 ? rep0 : repeatIndex === 1 ? rep1 : rep2;
       }
@@ -281,23 +301,23 @@ export function decodeAndExecuteSequencesInto(
       }
 
       const historyBytesNeeded = offset > produced ? offset - produced : 0;
-      if (ml > 0) {
+      if (matchLength > 0) {
         if (historyBytesNeeded === 0) {
           const copyStart = outPos - offset;
-          if (offset >= ml) {
-            output.copyWithin(outPos, copyStart, copyStart + ml);
-            outPos += ml;
+          if (offset >= matchLength) {
+            output.copyWithin(outPos, copyStart, copyStart + matchLength);
+            outPos += matchLength;
           } else if (offset <= FAST_SMALL_OFFSET_LOOP_THRESHOLD) {
-            for (let i = 0; i < ml; i++) {
-              output[outPos + i] = output[outPos - offset + i]!;
+            for (let j = 0; j < matchLength; j++) {
+              output[outPos + j] = output[outPos - offset + j]!;
             }
-            outPos += ml;
+            outPos += matchLength;
           } else {
             let copied = offset;
             output.copyWithin(outPos, copyStart, copyStart + copied);
             outPos += copied;
-            while (copied < ml) {
-              const toCopy = Math.min(copied, ml - copied);
+            while (copied < matchLength) {
+              const toCopy = Math.min(copied, matchLength - copied);
               output.copyWithin(outPos, outPos - copied, outPos - copied + toCopy);
               outPos += toCopy;
               copied += toCopy;
@@ -307,7 +327,7 @@ export function decodeAndExecuteSequencesInto(
           if (historyCap === 0) {
             throw new ZstdError('Invalid history read', 'corruption_detected');
           }
-          const historyCopyLen = Math.min(historyBytesNeeded, ml);
+          const historyCopyLen = Math.min(historyBytesNeeded, matchLength);
           const historyStart = historyLength - historyBytesNeeded;
           if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
             throw new ZstdError('Invalid history read', 'corruption_detected');
@@ -320,8 +340,8 @@ export function decodeAndExecuteSequencesInto(
           const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
           if (historyCopyLen <= FAST_HISTORY_COPY_LOOP_THRESHOLD) {
             let phys = physicalStart;
-            for (let i = 0; i < historyCopyLen; i++) {
-              output[outPos + i] = historyBuffer[phys]!;
+            for (let j = 0; j < historyCopyLen; j++) {
+              output[outPos + j] = historyBuffer[phys]!;
               phys = phys + 1 === historyCap ? 0 : phys + 1;
             }
             outPos += historyCopyLen;
@@ -334,15 +354,15 @@ export function decodeAndExecuteSequencesInto(
             }
           }
 
-          const matchRemaining = ml - historyCopyLen;
+          const matchRemaining = matchLength - historyCopyLen;
           if (matchRemaining > 0) {
             const copyStart = outPos - offset;
             if (offset >= matchRemaining) {
               output.copyWithin(outPos, copyStart, copyStart + matchRemaining);
               outPos += matchRemaining;
             } else if (offset <= FAST_SMALL_OFFSET_LOOP_THRESHOLD) {
-              for (let i = 0; i < matchRemaining; i++) {
-                output[outPos + i] = output[outPos - offset + i]!;
+              for (let j = 0; j < matchRemaining; j++) {
+                output[outPos + j] = output[outPos - offset + j]!;
               }
               outPos += matchRemaining;
             } else {
@@ -372,52 +392,19 @@ export function decodeAndExecuteSequencesInto(
         rep1 = rep0;
         rep0 = offset;
       }
-    };
 
-    const lastSequenceIndex = numSequences - 1;
-    for (let i = 0; i < lastSequenceIndex; i++) {
-      const offsetCode = ofSymbolByState[stateOF]!;
-      const mlCode = mlSymbolByState[stateML]!;
-      const llCode = llSymbolByState[stateLL]!;
-
-      const offsetValue = (1 << offsetCode) + reader.readBitsFastOrZero(offsetCode);
-      if (mlCode >= ML_BASELINE.length) throw new ZstdError('Invalid match length code', 'corruption_detected');
-      if (llCode >= LL_BASELINE.length) throw new ZstdError('Invalid literals length code', 'corruption_detected');
-
-      const mlNumBits = ML_NUMBITS[mlCode]!;
-      const mlBase = ML_BASELINE[mlCode]!;
-      const matchLength = mlBase + reader.readBitsFastOrZero(mlNumBits);
-
-      const llNumBits = LL_NUMBITS[llCode]!;
-      const llBase = LL_BASELINE[llCode]!;
-      const literalsLength = llCode <= 15 ? llCode : llBase + reader.readBitsFastOrZero(llNumBits);
-
-      executeOne(offsetValue, literalsLength, matchLength);
-
-      const llBits = llNumBitsByState[stateLL]!;
-      const mlBits = mlNumBitsByState[stateML]!;
-      const ofBits = ofNumBitsByState[stateOF]!;
-      stateLL = llBaselineByState[stateLL]! + reader.readBitsFastOrZero(llBits);
-      stateML = mlBaselineByState[stateML]! + reader.readBitsFastOrZero(mlBits);
-      stateOF = ofBaselineByState[stateOF]! + reader.readBitsFastOrZero(ofBits);
-      if (stateOF >>> 0 >= ofTableLength || stateML >>> 0 >= mlTableLength || stateLL >>> 0 >= llTableLength) {
-        throw new ZstdError('FSE invalid state', 'corruption_detected');
+      if (i < lastSequenceIndex) {
+        const llBits = llNumBitsByState[stateLL]!;
+        const mlBits = mlNumBitsByState[stateML]!;
+        const ofBits = ofNumBitsByState[stateOF]!;
+        stateLL = llBaselineByState[stateLL]! + reader.readBitsFastOrZero(llBits);
+        stateML = mlBaselineByState[stateML]! + reader.readBitsFastOrZero(mlBits);
+        stateOF = ofBaselineByState[stateOF]! + reader.readBitsFastOrZero(ofBits);
+        if (stateOF >>> 0 >= ofTableLength || stateML >>> 0 >= mlTableLength || stateLL >>> 0 >= llTableLength) {
+          throw new ZstdError('FSE invalid state', 'corruption_detected');
+        }
       }
     }
-
-    const offsetCode = ofSymbolByState[stateOF]!;
-    const mlCode = mlSymbolByState[stateML]!;
-    const llCode = llSymbolByState[stateLL]!;
-    const offsetValue = (1 << offsetCode) + reader.readBitsFastOrZero(offsetCode);
-    if (mlCode >= ML_BASELINE.length) throw new ZstdError('Invalid match length code', 'corruption_detected');
-    if (llCode >= LL_BASELINE.length) throw new ZstdError('Invalid literals length code', 'corruption_detected');
-    const mlNumBits = ML_NUMBITS[mlCode]!;
-    const mlBase = ML_BASELINE[mlCode]!;
-    const matchLength = mlBase + reader.readBitsFastOrZero(mlNumBits);
-    const llNumBits = LL_NUMBITS[llCode]!;
-    const llBase = LL_BASELINE[llCode]!;
-    const literalsLength = llCode <= 15 ? llCode : llBase + reader.readBitsFastOrZero(llNumBits);
-    executeOne(offsetValue, literalsLength, matchLength);
   }
 
   if (litPos < literals.length) {
