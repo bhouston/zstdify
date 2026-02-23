@@ -176,8 +176,10 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
     if (bits === 0) continue;
     const symbol = decodeTable.symbol[i]! >>> 0;
     if (symbol >= codeBySymbol.length) return null;
-    if ((codeBySymbol[symbol] ?? -1) < 0) codeBySymbol[symbol] = i;
-    numBitsBySymbol[symbol] = bits;
+    if ((codeBySymbol[symbol] ?? -1) < 0) {
+      codeBySymbol[symbol] = i >>> (maxDepth - bits);
+      numBitsBySymbol[symbol] = bits;
+    }
   }
   for (let i = 0; i < literals.length; i++) {
     const sym = literals[i] ?? 0;
