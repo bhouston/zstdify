@@ -107,6 +107,16 @@ export class BitReaderReverse {
     return ((word >>> bitInByte) & BIT_MASKS[n]!) >>> 0;
   }
 
+  /**
+   * Hot-loop helper: read n bits quickly, returning 0 when n is 0.
+   */
+  readBitsFastOrZero(n: number): number {
+    if (n === 0) {
+      return 0;
+    }
+    return this.readBitsFast(n);
+  }
+
   /** Skip trailing zero padding and end-mark bit from the stream tail. */
   skipPadding(): void {
     if (this.endBit <= this.startBit) {

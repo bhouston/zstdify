@@ -423,6 +423,9 @@ export function executeSequencesIntoFast(
   const literalsLengthBySeq = sequences.literalsLength;
   const offsetBySeq = sequences.offset;
   const matchLengthBySeq = sequences.matchLength;
+  let rep0 = repOffsets[0];
+  let rep1 = repOffsets[1];
+  let rep2 = repOffsets[2];
 
   for (let seqIndex = 0; seqIndex < seqCount; seqIndex++) {
     const seqLiteralsLength = literalsLengthBySeq[seqIndex]!;
@@ -449,7 +452,7 @@ export function executeSequencesIntoFast(
     const isNonRepeat = ov > 3 || (ov === 3 && ll0);
     if (isNonRepeat) {
       if (ov === 3) {
-        offset = repOffsets[0] - 1;
+        offset = rep0 - 1;
         if (offset === 0) {
           throw new ZstdError('Invalid match offset: repeat1-1 is 0', 'corruption_detected');
         }
@@ -462,7 +465,7 @@ export function executeSequencesIntoFast(
       } else {
         repeatIndex = (ov - 1) as 0 | 1 | 2;
       }
-      offset = repOffsets[repeatIndex]!;
+      offset = repeatIndex === 0 ? rep0 : repeatIndex === 1 ? rep1 : rep2;
     }
 
     const produced = outPos - targetOffset;
@@ -500,31 +503,73 @@ export function executeSequencesIntoFast(
           }
         }
       } else {
-        outPos = copyMatchWithHistorySlowPath(
-          target,
-          outPos,
-          offset,
-          remainingMatch,
-          historyBytesNeeded,
-          historyLength,
-          historyCap,
-          historyOldestPos,
-          historyBuffer,
-        );
+        if (historyCap === 0) {
+          throw new ZstdError('Invalid history read', 'corruption_detected');
+        }
+        const historyCopyLen = Math.min(historyBytesNeeded, remainingMatch);
+        const historyStart = historyLength - historyBytesNeeded;
+        if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
+          throw new ZstdError('Invalid history read', 'corruption_detected');
+        }
+        let physicalStart = historyOldestPos + historyStart;
+        if (physicalStart >= historyCap) {
+          physicalStart -= historyCap;
+        }
+        const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
+        const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
+        if (historyCopyLen <= FAST_HISTORY_COPY_LOOP_THRESHOLD) {
+          let phys = physicalStart;
+          for (let i = 0; i < historyCopyLen; i++) {
+            target[outPos + i] = historyBuffer[phys]!;
+            phys = phys + 1 === historyCap ? 0 : phys + 1;
+          }
+          outPos += historyCopyLen;
+        } else {
+          target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
+          outPos += firstHistoryChunk;
+          if (remainingHistoryChunk > 0) {
+            target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
+            outPos += remainingHistoryChunk;
+          }
+        }
+
+        const matchRemaining = remainingMatch - historyCopyLen;
+        if (matchRemaining > 0) {
+          const copyStart = outPos - offset;
+          if (offset >= matchRemaining) {
+            target.copyWithin(outPos, copyStart, copyStart + matchRemaining);
+            outPos += matchRemaining;
+          } else if (offset <= FAST_SMALL_OFFSET_LOOP_THRESHOLD) {
+            for (let i = 0; i < matchRemaining; i++) {
+              target[outPos + i] = target[outPos - offset + i]!;
+            }
+            outPos += matchRemaining;
+          } else {
+            let copied = offset;
+            target.copyWithin(outPos, copyStart, copyStart + copied);
+            outPos += copied;
+            while (copied < matchRemaining) {
+              const toCopy = Math.min(copied, matchRemaining - copied);
+              target.copyWithin(outPos, outPos - copied, outPos - copied + toCopy);
+              outPos += toCopy;
+              copied += toCopy;
+            }
+          }
+        }
       }
     }
 
     if (isNonRepeat) {
-      repOffsets[2] = repOffsets[1];
-      repOffsets[1] = repOffsets[0];
-      repOffsets[0] = offset;
+      rep2 = rep1;
+      rep1 = rep0;
+      rep0 = offset;
     } else if (repeatIndex === 1) {
-      repOffsets[1] = repOffsets[0];
-      repOffsets[0] = offset;
+      rep1 = rep0;
+      rep0 = offset;
     } else if (repeatIndex === 2) {
-      repOffsets[2] = repOffsets[1];
-      repOffsets[1] = repOffsets[0];
-      repOffsets[0] = offset;
+      rep2 = rep1;
+      rep1 = rep0;
+      rep0 = offset;
     }
   }
 
@@ -545,6 +590,10 @@ export function executeSequencesIntoFast(
     appendRangeToHistoryWindow(history, target, targetOffset, outPos - targetOffset);
   }
 
+  repOffsets[0] = rep0;
+  repOffsets[1] = rep1;
+  repOffsets[2] = rep2;
+
   return outPos - targetOffset;
 }
 
@@ -564,6 +613,9 @@ function executeSequencesIntoFastNoHistory(
   const literalsLengthBySeq = sequences.literalsLength;
   const offsetBySeq = sequences.offset;
   const matchLengthBySeq = sequences.matchLength;
+  let rep0 = repOffsets[0];
+  let rep1 = repOffsets[1];
+  let rep2 = repOffsets[2];
 
   for (let seqIndex = 0; seqIndex < seqCount; seqIndex++) {
     const seqLiteralsLength = literalsLengthBySeq[seqIndex]!;
@@ -590,7 +642,7 @@ function executeSequencesIntoFastNoHistory(
     const isNonRepeat = ov > 3 || (ov === 3 && ll0);
     if (isNonRepeat) {
       if (ov === 3) {
-        offset = repOffsets[0] - 1;
+        offset = rep0 - 1;
         if (offset === 0) {
           throw new ZstdError('Invalid match offset: repeat1-1 is 0', 'corruption_detected');
         }
@@ -603,7 +655,7 @@ function executeSequencesIntoFastNoHistory(
       } else {
         repeatIndex = (ov - 1) as 0 | 1 | 2;
       }
-      offset = repOffsets[repeatIndex]!;
+      offset = repeatIndex === 0 ? rep0 : repeatIndex === 1 ? rep1 : rep2;
     }
 
     const produced = outPos - targetOffset;
@@ -640,16 +692,16 @@ function executeSequencesIntoFastNoHistory(
     }
 
     if (isNonRepeat) {
-      repOffsets[2] = repOffsets[1];
-      repOffsets[1] = repOffsets[0];
-      repOffsets[0] = offset;
+      rep2 = rep1;
+      rep1 = rep0;
+      rep0 = offset;
     } else if (repeatIndex === 1) {
-      repOffsets[1] = repOffsets[0];
-      repOffsets[0] = offset;
+      rep1 = rep0;
+      rep0 = offset;
     } else if (repeatIndex === 2) {
-      repOffsets[2] = repOffsets[1];
-      repOffsets[1] = repOffsets[0];
-      repOffsets[0] = offset;
+      rep2 = rep1;
+      rep1 = rep0;
+      rep0 = offset;
     }
   }
 
@@ -670,75 +722,11 @@ function executeSequencesIntoFastNoHistory(
     appendRangeToHistoryWindow(history, target, targetOffset, outPos - targetOffset);
   }
 
+  repOffsets[0] = rep0;
+  repOffsets[1] = rep1;
+  repOffsets[2] = rep2;
+
   return outPos - targetOffset;
-}
-
-function copyMatchWithHistorySlowPath(
-  target: Uint8Array,
-  outPos: number,
-  offset: number,
-  remainingMatch: number,
-  historyBytesNeeded: number,
-  historyLength: number,
-  historyCap: number,
-  historyOldestPos: number,
-  historyBuffer: Uint8Array,
-): number {
-  if (historyCap === 0) {
-    throw new ZstdError('Invalid history read', 'corruption_detected');
-  }
-  const historyCopyLen = Math.min(historyBytesNeeded, remainingMatch);
-  const historyStart = historyLength - historyBytesNeeded;
-  if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
-    throw new ZstdError('Invalid history read', 'corruption_detected');
-  }
-  let physicalStart = historyOldestPos + historyStart;
-  if (physicalStart >= historyCap) {
-    physicalStart -= historyCap;
-  }
-  const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
-  const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
-  if (historyCopyLen <= FAST_HISTORY_COPY_LOOP_THRESHOLD) {
-    let phys = physicalStart;
-    for (let i = 0; i < historyCopyLen; i++) {
-      target[outPos + i] = historyBuffer[phys]!;
-      phys = phys + 1 === historyCap ? 0 : phys + 1;
-    }
-    outPos += historyCopyLen;
-  } else {
-    target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
-    outPos += firstHistoryChunk;
-    if (remainingHistoryChunk > 0) {
-      target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
-      outPos += remainingHistoryChunk;
-    }
-  }
-
-  const matchRemaining = remainingMatch - historyCopyLen;
-  if (matchRemaining <= 0) {
-    return outPos;
-  }
-  const copyStart = outPos - offset;
-  if (offset >= matchRemaining) {
-    target.copyWithin(outPos, copyStart, copyStart + matchRemaining);
-    return outPos + matchRemaining;
-  }
-  if (offset <= FAST_SMALL_OFFSET_LOOP_THRESHOLD) {
-    for (let i = 0; i < matchRemaining; i++) {
-      target[outPos + i] = target[outPos - offset + i]!;
-    }
-    return outPos + matchRemaining;
-  }
-  let copied = offset;
-  target.copyWithin(outPos, copyStart, copyStart + copied);
-  outPos += copied;
-  while (copied < matchRemaining) {
-    const toCopy = Math.min(copied, matchRemaining - copied);
-    target.copyWithin(outPos, outPos - copied, outPos - copied + toCopy);
-    outPos += toCopy;
-    copied += toCopy;
-  }
-  return outPos;
 }
 
 /**
