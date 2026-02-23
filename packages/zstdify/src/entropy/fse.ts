@@ -110,11 +110,7 @@ export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableL
 /**
  * Decode one FSE symbol. Updates state in place.
  */
-export function decodeFSESymbol(
-  table: FSEDecodeTable,
-  reader: BitReaderReverse,
-  state: { value: number },
-): number {
+export function decodeFSESymbol(table: FSEDecodeTable, reader: BitReaderReverse, state: { value: number }): number {
   const stateValue = state.value;
   if (stateValue < 0 || stateValue >= table.length) {
     throw new ZstdError('FSE invalid state', 'corruption_detected');

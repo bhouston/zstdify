@@ -3,7 +3,11 @@ import { decodeCompressedLiterals, decodeTreelessLiterals, parseLiteralsSectionH
 import { buildCompressedBlockPayload, type SequenceEntropyContext } from './compressedBlock.js';
 
 function buildLiteralsSectionPayload(literals: Uint8Array, context?: SequenceEntropyContext): Uint8Array {
-  const payload = buildCompressedBlockPayload(literals, [{ literalsLength: literals.length, offset: 1, matchLength: 3 }], context);
+  const payload = buildCompressedBlockPayload(
+    literals,
+    [{ literalsLength: literals.length, offset: 1, matchLength: 3 }],
+    context,
+  );
   if (!payload) {
     throw new Error('Failed to build compressed block payload');
   }
@@ -51,7 +55,13 @@ describe('literals section round-trip', () => {
     expect(header.blockType).toBe(2);
     expect(header.numStreams).toBe(4);
 
-    const decoded = decodeCompressedLiterals(payload, dataOffset, header.compressedSize!, header.regeneratedSize, header.numStreams);
+    const decoded = decodeCompressedLiterals(
+      payload,
+      dataOffset,
+      header.compressedSize!,
+      header.regeneratedSize,
+      header.numStreams,
+    );
     expect(decoded.literals).toEqual(literals);
   });
 
@@ -69,7 +79,13 @@ describe('literals section round-trip', () => {
     const { header, dataOffset } = parseLiteralsSectionHeader(payload, 0);
     expect(header.blockType).toBe(2);
 
-    const decoded = decodeCompressedLiterals(payload, dataOffset, header.compressedSize!, header.regeneratedSize, header.numStreams);
+    const decoded = decodeCompressedLiterals(
+      payload,
+      dataOffset,
+      header.compressedSize!,
+      header.regeneratedSize,
+      header.numStreams,
+    );
     expect(decoded.literals).toEqual(literals);
   });
 
@@ -83,7 +99,13 @@ describe('literals section round-trip', () => {
     const { header, dataOffset } = parseLiteralsSectionHeader(payload, 0);
     expect(header.regeneratedSize).toBe(literals.length);
     if (header.blockType === 2) {
-      const decoded = decodeCompressedLiterals(payload, dataOffset, header.compressedSize!, header.regeneratedSize, header.numStreams);
+      const decoded = decodeCompressedLiterals(
+        payload,
+        dataOffset,
+        header.compressedSize!,
+        header.regeneratedSize,
+        header.numStreams,
+      );
       expect(decoded.literals).toEqual(literals);
     } else {
       expect(header.blockType).toBe(0);

@@ -2,10 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { compress } from '../compress.js';
 import { parseLiteralsSectionHeader } from '../decode/literals.js';
 import { decodeSequences } from '../decode/sequences.js';
-import * as fse from '../entropy/fse.js';
 import { decompress } from '../decompress.js';
+import * as fse from '../entropy/fse.js';
 import { parseFrameHeader } from '../frame/frameHeader.js';
-import { __benchInternals, buildCompressedBlockPayload, type SequenceEntropyContext, writeCompressedBlock } from './compressedBlock.js';
+import {
+  __benchInternals,
+  buildCompressedBlockPayload,
+  type SequenceEntropyContext,
+  writeCompressedBlock,
+} from './compressedBlock.js';
 import { buildGreedySequences } from './greedySequences.js';
 
 function sequenceModesOffset(payload: Uint8Array, literalsSectionEnd: number): number {
@@ -171,9 +176,7 @@ describe('compressed block encoder', () => {
     const seqSection = __benchInternals.buildSequenceSection(plan.sequences)?.section;
     expect(seqSection).not.toBeNull();
     const decoded = decodeSequences(seqSection!, 0, seqSection!.length, null);
-    expect(
-      decoded.metadata.llMode === 2 || decoded.metadata.ofMode === 2 || decoded.metadata.mlMode === 2,
-    ).toBe(true);
+    expect(decoded.metadata.llMode === 2 || decoded.metadata.ofMode === 2 || decoded.metadata.mlMode === 2).toBe(true);
     expect(decoded.sequences.length).toBe(plan.sequences.length);
     let mismatchIndex = -1;
     let mismatchMessage = '';

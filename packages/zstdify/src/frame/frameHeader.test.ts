@@ -157,7 +157,8 @@ describe('frameHeader', () => {
             const wd = singleSegment ? null : 0x00;
             const dictBytes = didCases[dictionaryIdFlag]!;
             const fcsFieldSize = fcsSize(frameContentSizeFlag, singleSegment);
-            const fcsBytes = fcsFieldSize > 0 ? fcsCases[frameContentSizeFlag]!.subarray(0, fcsFieldSize) : new Uint8Array(0);
+            const fcsBytes =
+              fcsFieldSize > 0 ? fcsCases[frameContentSizeFlag]!.subarray(0, fcsFieldSize) : new Uint8Array(0);
             const data = buildFrameHeaderBytes(fhd, wd, dictBytes, fcsBytes);
             const { header } = parseZstdFrame(data, 0);
             const expectedDictionaryId =
@@ -196,7 +197,12 @@ describe('frameHeader', () => {
     const representative = [
       buildFrameHeaderBytes(0x00, 0x00, new Uint8Array([]), new Uint8Array([])),
       buildFrameHeaderBytes(0x26, null, new Uint8Array([0x01, 0x00]), new Uint8Array([0x10, 0x00])),
-      buildFrameHeaderBytes(0xe7, null, new Uint8Array([0x78, 0x56, 0x34, 0x12]), new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00])),
+      buildFrameHeaderBytes(
+        0xe7,
+        null,
+        new Uint8Array([0x78, 0x56, 0x34, 0x12]),
+        new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]),
+      ),
     ];
 
     for (const frame of representative) {

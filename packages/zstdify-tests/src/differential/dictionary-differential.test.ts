@@ -1,14 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createDictionary } from 'simple-zstd';
 import { describe, expect, it } from 'vitest';
 import { compress, decompress, generateDictionary } from 'zstdify';
-import {
-  requireZstdCli,
-  zstdCompressWithDictionary,
-  zstdDecompressWithDictionary,
-  zstdTrainDictionary,
-} from '../helpers/zstdCli.js';
+import { requireZstdCli, zstdCompressWithDictionary, zstdDecompressWithDictionary } from '../helpers/zstdCli.js';
 
 describe('differential dictionaries: zstd -> zstdify', () => {
   requireZstdCli();
@@ -62,18 +58,12 @@ describe('differential dictionaries: zstd -> zstdify', () => {
         'offset match literal sequence table repeat mode huffman fse decode',
         'browser node runtime buffer array uint8array encoder decoder api',
       ];
-      const samplePaths = sampleTexts.map((_, index) => join(tempRoot, `sample-${index}.txt`));
-      for (const [index, samplePath] of samplePaths.entries()) {
-        const sampleText = sampleTexts[index];
-        if (sampleText === undefined) {
-          throw new Error('Sample text missing');
-        }
-        writeFileSync(samplePath, sampleText);
-      }
-
-      zstdTrainDictionary(samplePaths, dictPath, 2048);
-
-      const dictionaryBytes = new Uint8Array(readFileSync(dictPath));
+      const dictBuffer = await createDictionary({
+        trainingFiles: sampleTexts.map((t) => Buffer.from(t, 'utf8')),
+        maxDictSize: 2048,
+      });
+      const dictionaryBytes = new Uint8Array(dictBuffer);
+      writeFileSync(dictPath, dictBuffer);
       const payload = new TextEncoder().encode('offset match literal sequence table');
       const encoded = await zstdCompressWithDictionary(payload, dictPath);
 

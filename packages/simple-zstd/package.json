@@ -1,0 +1,43 @@
+{
+  "name": "simple-zstd",
+  "version": "2.0.0",
+  "description": "Node.js interface to the system installed zstd.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsgo",
+    "dev": "tsgo --watch",
+    "tsgo": "tsgo",
+    "test": "vitest"
+  },
+  "keywords": [
+    "zstd",
+    "zstandard",
+    "compress",
+    "compression",
+    "decompress",
+    "decompression",
+    "stream",
+    "pipe",
+    "dictionary"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "debug": "^4.3.4",
+    "is-zst": "^1.0.0",
+    "tmp": "^0.2.1",
+    "tmp-promise": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/debug": "^4.1.12",
+    "@types/node": "^24",
+    "vitest": "^2.1.9"
+  },
+  "files": [
+    "dist"
+  ]
+}

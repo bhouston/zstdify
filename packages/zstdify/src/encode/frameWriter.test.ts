@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { writeFrameHeader } from './frameWriter.js';
 import { ZstdError } from '../errors.js';
+import { writeFrameHeader } from './frameWriter.js';
 
 const ZSTD_MAGIC_LE = [0x28, 0xb5, 0x2f, 0xfd];
 

@@ -1,6 +1,12 @@
 import { encodeReverseBitstream, ReverseBitWriter } from '../bitstream/reverseBitWriter.js';
 import type { Sequence } from '../decode/reconstruct.js';
-import { buildFSEDecodeTable, type FSEDecodeTable, normalizeCountsForTable, readNCount, writeNCount } from '../entropy/fse.js';
+import {
+  buildFSEDecodeTable,
+  type FSEDecodeTable,
+  normalizeCountsForTable,
+  readNCount,
+  writeNCount,
+} from '../entropy/fse.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
   LITERALS_LENGTH_TABLE_LOG,

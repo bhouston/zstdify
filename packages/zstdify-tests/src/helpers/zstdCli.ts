@@ -16,15 +16,6 @@ export function requireZstdCli(): void {
   }
 }
 
-export function zstdTrainDictionary(samplePaths: string[], dictPath: string, maxDictSize: number): void {
-  const train = spawnSync('zstd', ['--train', ...samplePaths, `--maxdict=${maxDictSize}`, '-o', dictPath, '--quiet'], {
-    encoding: null,
-  });
-  if (train.status !== 0) {
-    throw new Error(`zstd dictionary training failed: ${train.stderr?.toString() ?? 'unknown error'}`);
-  }
-}
-
 function parseArgs(args: string[]): {
   level?: number;
   dictionaryPath?: string;

@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decompress } from 'zstdify';
-import { requireZstdCli, zstdCompress, zstdCompressWithDictionary, zstdDecompress, zstdDecompressWithDictionary } from '../helpers/zstdCli.js';
+import {
+  requireZstdCli,
+  zstdCompress,
+  zstdCompressWithDictionary,
+  zstdDecompress,
+  zstdDecompressWithDictionary,
+} from '../helpers/zstdCli.js';
 
 function makeProblemPayload(size: number): Uint8Array {
   const data = new Uint8Array(size);

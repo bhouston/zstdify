@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import zlib from 'node:zlib';
+import { createDictionary } from 'simple-zstd';
 import { describe, expect, it } from 'vitest';
 import { compress, decompress, generateDictionary } from 'zstdify';
 import {
@@ -11,7 +11,6 @@ import {
   zstdCompress,
   zstdCompressWithDictionary,
   zstdDecompressWithDictionary,
-  zstdTrainDictionary,
 } from '../helpers/zstdCli.js';
 
 const LEVEL = 3;
@@ -64,41 +63,28 @@ async function withTempDictionaryPath<T>(dictionary: Uint8Array, fn: (dictPath: 
   }
 }
 
-function buildZstdCliDictionary(trainingSamples: Uint8Array[], maxDictSize: number): Uint8Array {
-  const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-train-'));
-  try {
-    const expandedSamples = [...trainingSamples];
-    let expansionIndex = 0;
-    // zstd CLI training rejects very small sample counts; pad with slight variants.
-    while (expandedSamples.length < 8) {
-      const base = trainingSamples[expansionIndex % trainingSamples.length];
-      if (base === undefined) {
-        throw new Error('Training sample missing');
-      }
-      const suffix = encoder.encode(`\ntrain-variant-${expandedSamples.length}`);
-      const variant = new Uint8Array(base.length + suffix.length);
-      variant.set(base, 0);
-      variant.set(suffix, base.length);
-      expandedSamples.push(variant);
-      expansionIndex++;
+async function buildZstdCliDictionary(trainingSamples: Uint8Array[], maxDictSize: number): Promise<Uint8Array> {
+  const expandedSamples = [...trainingSamples];
+  let expansionIndex = 0;
+  // zstd CLI training rejects very small sample counts; pad with slight variants.
+  while (expandedSamples.length < 8) {
+    const base = trainingSamples[expansionIndex % trainingSamples.length];
+    if (base === undefined) {
+      throw new Error('Training sample missing');
     }
-
-    const samplePaths = expandedSamples.map((_, index) => join(tempRoot, `sample-${index}.txt`));
-    for (const [index, samplePath] of samplePaths.entries()) {
-      const sample = expandedSamples[index];
-      if (sample === undefined) {
-        throw new Error('Training sample missing');
-      }
-      writeFileSync(samplePath, Buffer.from(sample));
-    }
-
-    const dictPath = join(tempRoot, 'trained.dict');
-    zstdTrainDictionary(samplePaths, dictPath, maxDictSize);
-
-    return new Uint8Array(readFileSync(dictPath));
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
+    const suffix = encoder.encode(`\ntrain-variant-${expandedSamples.length}`);
+    const variant = new Uint8Array(base.length + suffix.length);
+    variant.set(base, 0);
+    variant.set(suffix, base.length);
+    expandedSamples.push(variant);
+    expansionIndex++;
   }
+
+  const dictBuffer = await createDictionary({
+    trainingFiles: expandedSamples.map((s) => Buffer.from(s)),
+    maxDictSize,
+  });
+  return new Uint8Array(dictBuffer);
 }
 
 type DictCase = {
@@ -276,11 +262,8 @@ describe('interop: dictionary training (fast minimal cases, zstdify <-> Node zst
   }
 
   it(`${knownGoodCase.id}: zstd CLI-trained dictionary is valid for zstdify`, async () => {
-    const zstdCliDictionary = buildZstdCliDictionary(
-      [
-        ...knownGoodCase.trainingSamples,
-        ...payloadLineSamples(knownGoodCase.payload, 96),
-      ],
+    const zstdCliDictionary = await buildZstdCliDictionary(
+      [...knownGoodCase.trainingSamples, ...payloadLineSamples(knownGoodCase.payload, 96)],
       ZSTD_CLI_DICT_SIZE_BYTES,
     );
     expect(zstdCliDictionary.length).toBeGreaterThan(0);
@@ -289,7 +272,9 @@ describe('interop: dictionary training (fast minimal cases, zstdify <-> Node zst
       zstdCompressWithDictionary(knownGoodCase.payload, dictPath),
     );
 
-    expect(sha256(decompress(zstdCliCompressed, { dictionary: zstdCliDictionary }))).toBe(sha256(knownGoodCase.payload));
+    expect(sha256(decompress(zstdCliCompressed, { dictionary: zstdCliDictionary }))).toBe(
+      sha256(knownGoodCase.payload),
+    );
 
     const zstdifyWithDictionary = compress(knownGoodCase.payload, {
       level: LEVEL,
@@ -303,11 +288,8 @@ describe('interop: dictionary training (fast minimal cases, zstdify <-> Node zst
   });
 
   it(`${knownGoodCase.id}: zstd CLI-trained dictionary improves zstd CLI ratio`, async () => {
-    const zstdCliDictionary = buildZstdCliDictionary(
-      [
-        ...knownGoodCase.trainingSamples,
-        ...payloadLineSamples(knownGoodCase.payload, 96),
-      ],
+    const zstdCliDictionary = await buildZstdCliDictionary(
+      [...knownGoodCase.trainingSamples, ...payloadLineSamples(knownGoodCase.payload, 96)],
       ZSTD_CLI_DICT_SIZE_BYTES,
     );
     expect(zstdCliDictionary.length).toBeGreaterThan(0);
