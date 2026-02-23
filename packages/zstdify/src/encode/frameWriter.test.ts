@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { writeFrameHeader } from './frameWriter.js';
+import { ZstdError } from '../errors.js';
 
 const ZSTD_MAGIC_LE = [0x28, 0xb5, 0x2f, 0xfd];
 
@@ -55,5 +56,32 @@ describe('frameWriter', () => {
     expect(h[7]).toBe(0x34);
     expect(h[8]).toBe(0x12);
     expect(h[9]).toBe(5);
+  });
+
+  it('rejects invalid contentSize values', () => {
+    const invalidSizes = [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 0x1_0000_0000];
+    for (const size of invalidSizes) {
+      expect(() => writeFrameHeader(size, false)).toThrowError(/contentSize/i);
+    }
+  });
+
+  it('throws ZstdError for invalid contentSize', () => {
+    expect(() => writeFrameHeader(-1, false)).toThrow(ZstdError);
+    try {
+      writeFrameHeader(-1, false);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ZstdError);
+      expect((err as ZstdError).code).toBe('parameter_unsupported');
+    }
+  });
+
+  it('throws ZstdError for invalid dictionaryId', () => {
+    expect(() => writeFrameHeader(5, false, 0)).toThrow(ZstdError);
+    try {
+      writeFrameHeader(5, false, 0);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ZstdError);
+      expect((err as ZstdError).code).toBe('parameter_unsupported');
+    }
   });
 });

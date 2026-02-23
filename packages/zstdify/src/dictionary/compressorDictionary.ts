@@ -24,3 +24,17 @@ export function resolveDictionaryIdForCompression(
 
   return parsedDictionaryId;
 }
+
+export function resolveDictionaryHistoryForCompression(dictionaryBytes: Uint8Array): Uint8Array {
+  if (dictionaryBytes.length === 0) {
+    return dictionaryBytes;
+  }
+  // Raw-content dictionaries can be used directly as a history prefix.
+  if (dictionaryBytes.length < 8 || readU32LE(dictionaryBytes, 0) !== ZSTD_DICTIONARY_MAGIC) {
+    return dictionaryBytes;
+  }
+  // Full zstd dictionary format includes entropy metadata and rep offsets.
+  // Encoder-side support for those fields is not implemented yet, so avoid
+  // seeding history with incompatible bytes.
+  return new Uint8Array(0);
+}

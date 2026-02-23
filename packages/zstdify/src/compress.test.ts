@@ -69,4 +69,17 @@ describe('compress branch behavior', () => {
     expect(blockTypes.length).toBe(2);
     expect(blockTypes[1]).toBe(2);
   });
+
+  it('uses raw-content dictionary as initial history and strictly reduces size', () => {
+    const input = new Uint8Array(256);
+    for (let i = 0; i < input.length; i++) {
+      input[i] = i;
+    }
+    const dictionary = input.slice();
+    const withoutDictionary = compress(input, { level: 3 });
+    const withDictionary = compress(input, { level: 3, dictionary, noDictId: true });
+    expect(firstBlockType(withoutDictionary)).toBe(0);
+    expect(firstBlockType(withDictionary)).toBe(2);
+    expect(withDictionary.length).toBeLessThan(withoutDictionary.length);
+  });
 });

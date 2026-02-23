@@ -2,6 +2,8 @@
  * Write zstd frame header.
  */
 
+import { ZstdError } from '../errors.js';
+
 const ZSTD_MAGIC = 0xfd2fb528;
 
 function writeDictionaryId(chunks: number[], dictionaryId: number): void {
@@ -26,6 +28,9 @@ export function writeFrameHeader(
   hasChecksum: boolean,
   dictionaryId: number | null = null,
 ): Uint8Array {
+  if (!Number.isInteger(contentSize) || contentSize < 0 || contentSize > 0xffff_ffff) {
+    throw new ZstdError('contentSize must be a 32-bit non-negative integer', 'parameter_unsupported');
+  }
   const chunks: number[] = [];
   chunks.push(ZSTD_MAGIC & 0xff, (ZSTD_MAGIC >> 8) & 0xff, (ZSTD_MAGIC >> 16) & 0xff, (ZSTD_MAGIC >> 24) & 0xff);
 
@@ -42,7 +47,7 @@ export function writeFrameHeader(
   }
   if (dictionaryId !== null) {
     if (!Number.isInteger(dictionaryId) || dictionaryId <= 0 || dictionaryId > 0xffff_ffff) {
-      throw new Error('Invalid dictionaryId in frame header');
+      throw new ZstdError('Invalid dictionaryId in frame header', 'parameter_unsupported');
     }
     if (dictionaryId <= 0xff) fhd |= 1;
     else if (dictionaryId <= 0xffff) fhd |= 2;

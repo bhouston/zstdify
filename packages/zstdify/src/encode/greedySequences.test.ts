@@ -52,6 +52,20 @@ describe('buildGreedySequences', () => {
     expect(plan.sequences.length).toBeGreaterThan(0);
   });
 
+  it('uses history prefix to create matches absent from the input', () => {
+    const input = new Uint8Array(256);
+    for (let i = 0; i < input.length; i++) {
+      input[i] = i;
+    }
+    const withoutHistory = buildGreedySequences(input, { strategy: 'fast' });
+    const withHistory = buildGreedySequences(input, { strategy: 'fast', history: input });
+    const output = executeSequences(withHistory.literals, withHistory.sequences, 128 * 1024, [1, 4, 8], input);
+    expect(withoutHistory.sequences).toEqual([]);
+    expect(withHistory.sequences.length).toBeGreaterThan(0);
+    expect(withHistory.literals.length).toBeLessThan(withoutHistory.literals.length);
+    expect(output).toEqual(input);
+  });
+
   it('reconstructs json-event-like corpus payload in fast mode', () => {
     const input = new TextEncoder().encode(
       Array.from(

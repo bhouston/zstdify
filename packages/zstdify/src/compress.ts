@@ -3,7 +3,7 @@
  * Level 0: raw blocks only (no compression, fast).
  */
 
-import { resolveDictionaryIdForCompression } from './dictionary/compressorDictionary.js';
+import { resolveDictionaryHistoryForCompression, resolveDictionaryIdForCompression } from './dictionary/compressorDictionary.js';
 import { writeRawBlock, writeRLEBlock } from './encode/blockWriter.js';
 import {
   buildCompressedBlockPayload,
@@ -63,6 +63,7 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   const hasChecksum = options?.checksum ?? false;
   const dictionary = options?.dictionary;
   const dictionaryBytes = dictionary instanceof Uint8Array ? dictionary : dictionary?.bytes;
+  const dictionaryHistory = dictionaryBytes ? resolveDictionaryHistoryForCompression(dictionaryBytes) : null;
   const providedDictionaryId = dictionary instanceof Uint8Array ? null : (dictionary?.id ?? null);
   const dictionaryId = options?.noDictId
     ? null
@@ -79,7 +80,10 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   let offset = 0;
   const blockCount = input.length === 0 ? 1 : Math.ceil(input.length / BLOCK_MAX);
   let blockIndex = 0;
-  let history: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+  let history: Uint8Array<ArrayBufferLike> =
+    dictionaryHistory && dictionaryHistory.length > 0
+      ? dictionaryHistory.subarray(Math.max(0, dictionaryHistory.length - WINDOW_SIZE))
+      : new Uint8Array(0);
   let repOffsets: [number, number, number] = [1, 4, 8];
   const sequenceEntropyContext: SequenceEntropyContext = { prevTables: null };
   const sequencePlannerState = createSequencePlannerState();
