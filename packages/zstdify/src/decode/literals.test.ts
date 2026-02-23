@@ -96,7 +96,7 @@ describe('decodeCompressedLiterals regression', () => {
         const reader = new BitReaderReverse(new Uint8Array([streamByte]), 0, 1);
         reader.skipPadding();
         for (let i = 0; i < count; i++) {
-          out[i] = decodeHuffmanSymbol(table, maxNumBits, reader);
+          out[i] = decodeHuffmanSymbol(table, reader);
         }
         return out;
       } catch {

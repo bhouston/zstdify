@@ -77,7 +77,8 @@ export function buildHuffmanDecodeTable(numBits: readonly number[], maxNumBits: 
 /**
  * Decode one Huffman symbol. Reader must be positioned at start of code.
  */
-export function decodeHuffmanSymbol(table: HuffmanDecodeTable, maxNumBits: number, reader: BitReaderReverse): number {
+export function decodeHuffmanSymbol(table: HuffmanDecodeTable, reader: BitReaderReverse): number {
+  const maxNumBits = table.maxNumBits;
   const peek = reader.readBits(maxNumBits);
   if (peek < 0 || peek >= table.length) {
     throw new ZstdError('Huffman invalid code', 'corruption_detected');

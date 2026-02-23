@@ -16,7 +16,7 @@ describe('Huffman', () => {
     // whose row has numBits=1, so one bit must remain unread.
     const reader = new BitReaderReverse(new Uint8Array([0xa0, 0x01]), 0, 2);
     reader.skipPadding();
-    const symbol = decodeHuffmanSymbol(table, 2, reader);
+    const symbol = decodeHuffmanSymbol(table, reader);
     expect(symbol).toBe(0);
     expect(reader.readBits(1)).toBe(0);
   });

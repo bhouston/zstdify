@@ -26,7 +26,27 @@ export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableL
   if (!normalizedCounter || normalizedCounter.length === 0) {
     throw new ZstdError('FSE: invalid normalized counter', 'corruption_detected');
   }
+  if (!Number.isInteger(tableLog) || tableLog < 1 || tableLog > 15) {
+    throw new ZstdError('FSE: invalid tableLog', 'corruption_detected');
+  }
+  if (normalizedCounter.length > 0xffff + 1) {
+    throw new ZstdError('FSE: symbol value out of range', 'corruption_detected');
+  }
   const tableSize = 1 << tableLog;
+  let totalProbability = 0;
+  for (let s = 0; s < normalizedCounter.length; s++) {
+    const n = normalizedCounter[s];
+    if (!Number.isInteger(n) || n === undefined || n < -1) {
+      throw new ZstdError('FSE: invalid normalized count', 'corruption_detected');
+    }
+    totalProbability += n < 0 ? 1 : n;
+    if (totalProbability > tableSize) {
+      throw new ZstdError('FSE: invalid normalized sum', 'corruption_detected');
+    }
+  }
+  if (totalProbability !== tableSize) {
+    throw new ZstdError('FSE: invalid normalized sum', 'corruption_detected');
+  }
   const tableSymbol: number[] = new Array(tableSize);
   const maxSymbolValue = normalizedCounter.length - 1;
 
@@ -92,7 +112,6 @@ export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableL
  */
 export function decodeFSESymbol(
   table: FSEDecodeTable,
-  _tableLog: number,
   reader: BitReaderReverse,
   state: { value: number },
 ): number {

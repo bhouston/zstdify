@@ -33,13 +33,27 @@ describe('FSE', () => {
     }
   });
 
+  it('buildFSEDecodeTable validates tableLog bounds', () => {
+    expect(() => buildFSEDecodeTable([1], 0)).toThrow(/invalid tableLog/i);
+    expect(() => buildFSEDecodeTable([1], 16)).toThrow(/invalid tableLog/i);
+    expect(() => buildFSEDecodeTable([1], 5.5)).toThrow(/invalid tableLog/i);
+  });
+
+  it('buildFSEDecodeTable validates normalized count values', () => {
+    expect(() => buildFSEDecodeTable([2, -2], 2)).toThrow(/invalid normalized count/i);
+  });
+
+  it('buildFSEDecodeTable validates normalized sum matches table size', () => {
+    expect(() => buildFSEDecodeTable([1, 1], 2)).toThrow(/invalid normalized sum/i);
+  });
+
   it('decodeFSESymbol updates state', () => {
     const table = buildFSEDecodeTable(LITERALS_LENGTH_DEFAULT_DISTRIBUTION, LITERALS_LENGTH_TABLE_LOG);
     const data = new Uint8Array([0x55, 0xaa, 0x01]);
     const reader = new BitReaderReverse(data, 0, 3);
     reader.skipPadding();
     const state = { value: 0 };
-    const symbol = decodeFSESymbol(table, LITERALS_LENGTH_TABLE_LOG, reader, state);
+    const symbol = decodeFSESymbol(table, reader, state);
     expect(typeof symbol).toBe('number');
     expect(state.value).toBeGreaterThanOrEqual(0);
   });
