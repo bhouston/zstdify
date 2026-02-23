@@ -151,6 +151,9 @@ describe('compressed block encoder', () => {
     const seqSection = __benchInternals.buildSequenceSection(plan.sequences)?.section;
     expect(seqSection).not.toBeNull();
     const decoded = decodeSequences(seqSection!, 0, seqSection!.length, null);
+    expect(
+      decoded.metadata.llMode === 2 || decoded.metadata.ofMode === 2 || decoded.metadata.mlMode === 2,
+    ).toBe(true);
     expect(decoded.sequences.length).toBe(plan.sequences.length);
     let mismatchIndex = -1;
     let mismatchMessage = '';

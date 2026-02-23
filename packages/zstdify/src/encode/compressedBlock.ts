@@ -1,6 +1,6 @@
 import { encodeReverseBitstream, ReverseBitWriter } from '../bitstream/reverseBitWriter.js';
 import type { Sequence } from '../decode/reconstruct.js';
-import { buildFSEDecodeTable, type FSEDecodeTable, normalizeCountsForTable, writeNCount } from '../entropy/fse.js';
+import { buildFSEDecodeTable, type FSEDecodeTable, normalizeCountsForTable, readNCount, writeNCount } from '../entropy/fse.js';
 import {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
   LITERALS_LENGTH_TABLE_LOG,
@@ -411,6 +411,7 @@ function histogramsEqual(a: Uint32Array, b: Uint32Array): boolean {
 function getNormalizedTableCandidates(
   codes: ArrayLike<number>,
   maxTableLog: number,
+  decodeMaxSymbolValue: number,
 ): Array<{ table: FSEDecodeTable; tableLog: number; header: Uint8Array }> {
   const alphabetSize = symbolRange(codes);
   if (alphabetSize <= 0) return [];
@@ -442,13 +443,18 @@ function getNormalizedTableCandidates(
       if (matched) continue;
     }
     try {
-      const { normalizedCounter, maxSymbolValue } = normalizeCountsForTable(Array.from(histogram), tableLog);
-      const header = writeNCount(normalizedCounter, maxSymbolValue, tableLog);
-      const table = buildFSEDecodeTable(normalizedCounter, tableLog);
+      const { normalizedCounter, maxSymbolValue: normalizedMaxSymbolValue } = normalizeCountsForTable(
+        Array.from(histogram),
+        tableLog,
+      );
+      const header = writeNCount(normalizedCounter, normalizedMaxSymbolValue, tableLog);
+      // Rebuild table from our own serialized header so encoder pathing matches decoder semantics exactly.
+      const parsed = readNCount(header, 0, decodeMaxSymbolValue, maxTableLog);
+      const table = buildFSEDecodeTable(parsed.normalizedCounter, parsed.tableLog);
       const out: NormalizedTableCacheEntry = {
         histogram: histogram.slice(0),
         table,
-        tableLog,
+        tableLog: parsed.tableLog,
         header,
       };
       if (!cachedBucket) {
@@ -462,6 +468,15 @@ function getNormalizedTableCandidates(
     }
   }
   return results;
+}
+
+function getTableMaxSymbol(table: FSEDecodeTable): number {
+  let max = 0;
+  for (let i = 0; i < table.length; i++) {
+    const symbol = table.symbol[i] ?? 0;
+    if (symbol > max) max = symbol;
+  }
+  return max;
 }
 
 function symbolizedSequences(sequences: readonly Sequence[]): SymbolizedSequences | null {
@@ -514,15 +529,6 @@ function chooseStreamMode(
   const histogram = alphabetSize > 0 ? buildHistogram(codes, alphabetSize) : new Uint32Array(0);
   const predefinedPath = buildStatePath(codes, predefinedTable);
   if (!predefinedPath) return null;
-  if (process.env.ZSTDIFY_ENABLE_COMPRESSED_SEQUENCE_TABLES !== '1') {
-    return {
-      mode: 0,
-      table: predefinedTable,
-      tableLog: predefinedTableLog,
-      path: predefinedPath,
-      tableHeader: new Uint8Array(0),
-    };
-  }
   let best: StreamChoice = {
     mode: 0,
     table: predefinedTable,
@@ -552,7 +558,7 @@ function chooseStreamMode(
     }
   }
 
-  const compressedCandidates = getNormalizedTableCandidates(codes, maxTableLog);
+  const compressedCandidates = getNormalizedTableCandidates(codes, maxTableLog, getTableMaxSymbol(predefinedTable));
   if (compressedCandidates.length > 0) {
     const ranked = compressedCandidates
       .map((compressed) => ({

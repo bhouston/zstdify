@@ -87,7 +87,13 @@ export class BitReaderReverse {
     return value;
   }
 
-  /** Read n bits and throw if request crosses the logical stream start. */
+  /**
+   * Read n bits and throw if request crosses the logical stream start.
+   *
+   * Use strict reads for inputs that must fail fast on truncation/corruption.
+   * Keep readBits()/readBitsFast() for decode paths that intentionally rely on
+   * zstd-compatible zero-fill behavior near the stream start.
+   */
   readBitsStrict(n: number): number {
     if (n < 1 || n > 32) {
       throw new RangeError(`BitReaderReverse.readBitsStrict: n must be 1-32, got ${n}`);
