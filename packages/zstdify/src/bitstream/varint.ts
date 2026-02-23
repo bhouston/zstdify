@@ -23,7 +23,7 @@ export function decodeVarint(data: Uint8Array, offset: number): { value: number;
     if (shift === 28 && chunk > 0x0f) {
       throw new RangeError('decodeVarint: value too large for uint32');
     }
-    value += chunk * 2 ** shift;
+    value |= chunk << shift;
     if ((byte & 0x80) === 0) {
       return { value: value >>> 0, bytesRead: pos - offset };
     }
@@ -33,19 +33,22 @@ export function decodeVarint(data: Uint8Array, offset: number): { value: number;
   throw new RangeError('decodeVarint: exceeds 5 bytes for uint32');
 }
 
+const MAX_VARINT_BYTES = 5;
+
 export function encodeVarint(value: number): Uint8Array {
   if (!Number.isInteger(value) || value < 0 || value > 0xffff_ffff) {
     throw new RangeError(`encodeVarint: value must be a uint32, got ${value}`);
   }
-  const bytes: number[] = [];
+  const buf = new Uint8Array(MAX_VARINT_BYTES);
   let v = value >>> 0;
+  let pos = 0;
 
   do {
     let byte = v & 0x7f;
     v >>>= 7;
     if (v !== 0) byte |= 0x80;
-    bytes.push(byte);
+    buf[pos++] = byte;
   } while (v !== 0);
 
-  return new Uint8Array(bytes);
+  return buf.subarray(0, pos);
 }

@@ -41,6 +41,7 @@ export class ReverseBitWriter {
     }
   }
 
+  /** Returns a copy of the written bytes so the writer buffer can be reused on reset(). */
   finish(): Uint8Array {
     if (this.bitCount > 0 && this.writePos < this.outputSize) {
       this.buffer[this.writePos++] = this.bitContainer & 0xff;

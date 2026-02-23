@@ -1,12 +1,26 @@
 /**
  * Little-endian bit writer.
  * Writes bits LSB-first within bytes.
+ * Uses a single pre-allocated Uint8Array buffer (grown as needed) to avoid GC pressure.
  */
 
+const DEFAULT_BITWRITER_CAPACITY = 256;
+
 export class BitWriter {
-  private chunks: number[] = [];
+  private buffer: Uint8Array;
+  private writePos = 0;
   private currentByte = 0;
   private bitOffset = 0; // 0-7, bits written in current byte
+
+  constructor(initialCapacity = DEFAULT_BITWRITER_CAPACITY) {
+    this.buffer = new Uint8Array(initialCapacity);
+  }
+
+  private grow(): void {
+    const next = new Uint8Array(this.buffer.length * 2);
+    next.set(this.buffer, 0);
+    this.buffer = next;
+  }
 
   /** Write n bits (1-32), LSB first */
   writeBits(n: number, bits: number): void {
@@ -19,7 +33,7 @@ export class BitWriter {
 
     while (bitsLeft > 0) {
       const spaceInByte = 8 - this.bitOffset;
-      const take = Math.min(bitsLeft, spaceInByte);
+      const take = bitsLeft < spaceInByte ? bitsLeft : spaceInByte;
       const maskTake = (1 << take) - 1;
       this.currentByte |= (value & maskTake) << this.bitOffset;
 
@@ -28,25 +42,29 @@ export class BitWriter {
       value >>= take;
 
       if (this.bitOffset >= 8) {
-        this.chunks.push(this.currentByte & 0xff);
+        if (this.writePos >= this.buffer.length) this.grow();
+        this.buffer[this.writePos++] = this.currentByte & 0xff;
         this.currentByte = 0;
         this.bitOffset = 0;
       }
     }
   }
 
-  /** Flush remaining bits to output. Call when done writing. */
+  /** Flush remaining bits to output. Call when done writing. Returns a copy so the writer can be reused. */
   flush(): Uint8Array {
-    const result: number[] = [...this.chunks];
     if (this.bitOffset > 0) {
-      result.push(this.currentByte & 0xff);
+      if (this.writePos >= this.buffer.length) this.grow();
+      this.buffer[this.writePos++] = this.currentByte & 0xff;
+      this.currentByte = 0;
+      this.bitOffset = 0;
     }
-    return new Uint8Array(result);
+    if (this.writePos === 0) return new Uint8Array(0);
+    return this.buffer.slice(0, this.writePos);
   }
 
-  /** Reset writer for reuse */
+  /** Reset writer for reuse (keeps buffer to avoid re-allocation). */
   reset(): void {
-    this.chunks = [];
+    this.writePos = 0;
     this.currentByte = 0;
     this.bitOffset = 0;
   }
