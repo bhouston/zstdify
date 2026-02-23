@@ -472,7 +472,7 @@ function createFSEWeightsTreeBytes(weights: number[]): Uint8Array | null {
   if (usedSymbols.length === 0) return null;
 
   for (let tableLog = WEIGHT_MAX_TABLE_LOG; tableLog >= 5; tableLog--) {
-    const normalizedCandidates: Array<{ normalizedCounter: number[]; maxSymbolValue: number }> = [];
+    const normalizedCandidates: Array<{ normalizedCounter: ArrayLike<number>; maxSymbolValue: number }> = [];
     normalizedCandidates.push(normalizeCountsForTable(histogram, tableLog));
     const tableSize = 1 << tableLog;
     if (usedSymbols.length <= tableSize) {

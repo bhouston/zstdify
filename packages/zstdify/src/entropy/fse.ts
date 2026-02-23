@@ -22,7 +22,7 @@ const FSE_TABLESTEP = (tableSize: number) => (tableSize >> 1) + (tableSize >> 3)
  * Counts are -1 for "less than 1" (full state reset) symbols.
  * Based on zstd FSE_buildDTable logic.
  */
-export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableLog: number): FSEDecodeTable {
+export function buildFSEDecodeTable(normalizedCounter: ArrayLike<number>, tableLog: number): FSEDecodeTable {
   if (!normalizedCounter || normalizedCounter.length === 0) {
     throw new ZstdError('FSE: invalid normalized counter', 'corruption_detected');
   }
@@ -47,10 +47,10 @@ export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableL
   if (totalProbability !== tableSize) {
     throw new ZstdError('FSE: invalid normalized sum', 'corruption_detected');
   }
-  const tableSymbol: number[] = new Array(tableSize);
+  const tableSymbol = new Uint16Array(tableSize);
   const maxSymbolValue = normalizedCounter.length - 1;
 
-  const symbolNext: number[] = new Array(maxSymbolValue + 1);
+  const symbolNext = new Uint32Array(maxSymbolValue + 1);
   let highThreshold = tableSize - 1;
 
   for (let s = 0; s <= maxSymbolValue; s++) {
@@ -83,12 +83,8 @@ export function buildFSEDecodeTable(normalizedCounter: readonly number[], tableL
   const numBitsByState = new Uint8Array(tableSize);
   const baselineByState = new Int32Array(tableSize);
   for (let u = 0; u < tableSize; u++) {
-    const symbol = tableSymbol[u];
-    if (symbol === undefined) {
-      throw new ZstdError('FSE invalid decode table', 'corruption_detected');
-    }
-    const nextState = symbolNext[symbol];
-    if (nextState === undefined) throw new ZstdError('FSE invalid symbol', 'corruption_detected');
+    const symbol = tableSymbol[u]!;
+    const nextState = symbolNext[symbol]!;
     symbolNext[symbol] = nextState + 1;
 
     const nbBits = tableLog - 31 + Math.clz32(nextState);
@@ -147,14 +143,14 @@ export function readNCount(
   offset: number,
   maxSymbolValue: number,
   maxTableLog: number,
-): { normalizedCounter: number[]; tableLog: number; maxSymbolValue: number; bytesRead: number } {
+): { normalizedCounter: Int32Array; tableLog: number; maxSymbolValue: number; bytesRead: number } {
   const remainingInput = data.length - offset;
   if (remainingInput <= 0) {
     throw new ZstdError('FSE readNCount: truncated input', 'corruption_detected');
   }
 
   const parseBody = (buf: Uint8Array, hbSize: number) => {
-    const normalizedCounter = new Array<number>(maxSymbolValue + 1).fill(0);
+    const normalizedCounter = new Int32Array(maxSymbolValue + 1);
     let ip = 0;
     const iend = hbSize;
     const maxSV1 = maxSymbolValue + 1;
@@ -277,9 +273,9 @@ export function readNCount(
 }
 
 export function normalizeCountsForTable(
-  counts: readonly number[],
+  counts: ArrayLike<number>,
   tableLog: number,
-): { normalizedCounter: number[]; maxSymbolValue: number } {
+): { normalizedCounter: Uint32Array; maxSymbolValue: number } {
   const tableSize = 1 << tableLog;
   if (tableSize <= 0) {
     throw new ZstdError('FSE normalize: invalid tableLog', 'parameter_unsupported');
@@ -288,7 +284,7 @@ export function normalizeCountsForTable(
   if (maxSymbolValue < 0) {
     throw new ZstdError('FSE normalize: empty counts', 'parameter_unsupported');
   }
-  const normalizedCounter = new Array<number>(counts.length).fill(0);
+  const normalizedCounter = new Uint32Array(counts.length);
   let total = 0;
   let nonZero = 0;
   for (let s = 0; s < counts.length; s++) {
@@ -305,16 +301,16 @@ export function normalizeCountsForTable(
     throw new ZstdError('FSE normalize: table too small for distribution', 'parameter_unsupported');
   }
 
-  const remainders = new Array<number>(counts.length).fill(0);
+  const remainders = new Float64Array(counts.length);
   let assigned = 0;
   for (let s = 0; s < counts.length; s++) {
     const c = counts[s] ?? 0;
     if (c <= 0) continue;
     const scaled = (c * tableSize) / total;
-    let value = Math.floor(scaled);
+    let value = (scaled | 0);
     if (value < 1) value = 1;
     normalizedCounter[s] = value;
-    remainders[s] = scaled - Math.floor(scaled);
+    remainders[s] = scaled - (scaled | 0);
     assigned += value;
   }
 
@@ -322,7 +318,7 @@ export function normalizeCountsForTable(
     let bestSymbol = -1;
     let bestCount = 0;
     for (let s = 0; s < normalizedCounter.length; s++) {
-      const n = normalizedCounter[s] ?? 0;
+      const n = normalizedCounter[s]!;
       if (n > 1 && n > bestCount) {
         bestCount = n;
         bestSymbol = s;
@@ -331,7 +327,7 @@ export function normalizeCountsForTable(
     if (bestSymbol < 0) {
       throw new ZstdError('FSE normalize: failed to reduce distribution', 'parameter_unsupported');
     }
-    normalizedCounter[bestSymbol] = (normalizedCounter[bestSymbol] ?? 1) - 1;
+    normalizedCounter[bestSymbol]--;
     assigned--;
   }
 
@@ -340,9 +336,9 @@ export function normalizeCountsForTable(
     let bestRemainder = -1;
     let bestCount = -1;
     for (let s = 0; s < normalizedCounter.length; s++) {
-      const n = normalizedCounter[s] ?? 0;
+      const n = normalizedCounter[s]!;
       if (n <= 0) continue;
-      const rem = remainders[s] ?? 0;
+      const rem = remainders[s]!;
       if (rem > bestRemainder || (rem === bestRemainder && n > bestCount)) {
         bestRemainder = rem;
         bestCount = n;
@@ -352,7 +348,7 @@ export function normalizeCountsForTable(
     if (bestSymbol < 0) {
       throw new ZstdError('FSE normalize: failed to complete distribution', 'parameter_unsupported');
     }
-    normalizedCounter[bestSymbol] = (normalizedCounter[bestSymbol] ?? 0) + 1;
+    normalizedCounter[bestSymbol]++;
     assigned++;
   }
 
@@ -360,7 +356,7 @@ export function normalizeCountsForTable(
 }
 
 export function writeNCount(
-  normalizedCounter: readonly number[],
+  normalizedCounter: ArrayLike<number>,
   maxSymbolValue: number,
   tableLog: number,
 ): Uint8Array {
@@ -371,18 +367,21 @@ export function writeNCount(
     throw new ZstdError('FSE writeNCount: invalid max symbol', 'parameter_unsupported');
   }
   const tableSize = 1 << tableLog;
-  const out: number[] = [];
+  const alphabetSize = (maxSymbolValue + 1) | 0;
+  const outMaxLen = (alphabetSize * 4 + 32) | 0;
+  const out = new Uint8Array(outMaxLen);
+  let outIdx = 0;
   let bitStream = 0 >>> 0;
   let bitCount = 0;
   let nbBits = tableLog + 1;
   let remaining = tableSize + 1;
   let threshold = tableSize;
   let symbol = 0;
-  const alphabetSize = maxSymbolValue + 1;
   let previousIs0 = false;
 
   const flush16 = () => {
-    out.push(bitStream & 0xff, (bitStream >>> 8) & 0xff);
+    out[outIdx++] = bitStream & 0xff;
+    out[outIdx++] = (bitStream >>> 8) & 0xff;
     bitStream >>>= 16;
     bitCount -= 16;
   };
@@ -438,7 +437,8 @@ export function writeNCount(
     throw new ZstdError('FSE writeNCount: invalid normalized sum', 'parameter_unsupported');
   }
 
-  out.push(bitStream & 0xff, (bitStream >>> 8) & 0xff);
-  const finalSize = out.length - (2 - ((bitCount + 7) >> 3));
-  return new Uint8Array(out.slice(0, finalSize));
+  out[outIdx++] = bitStream & 0xff;
+  out[outIdx++] = (bitStream >>> 8) & 0xff;
+  const finalSize = outIdx - (2 - ((bitCount + 7) >> 3));
+  return out.subarray(0, finalSize);
 }

@@ -1,9 +1,13 @@
 import type { Sequence } from '../decode/reconstruct.js';
 
 const WINDOW_SIZE = 128 * 1024;
+const MAX_BLOCK_SIZE = 128 * 1024;
 const MIN_MATCH = 3;
 const HASH_BITS = 16;
 const HASH_SIZE = 1 << HASH_BITS;
+
+/** Max combined length (history + block) for buffer pre-allocation. */
+const MAX_COMBINED = WINDOW_SIZE + MAX_BLOCK_SIZE;
 
 export interface GreedyEncodeResult {
   literals: Uint8Array;
@@ -26,6 +30,13 @@ export interface SequencePlannerState {
   historyBytes: Uint8Array;
   historyChainPrev: Int32Array;
   historyHeads: Int32Array;
+  /** Reusable buffers to reduce allocations in hot path (internal). */
+  _combinedBuffer?: Uint8Array;
+  _literalsBuffer?: Uint8Array;
+  _chainPrevBuffer?: Int32Array;
+  _headsBuffer?: Int32Array;
+  _historyBytesBuffer?: Uint8Array;
+  _historyChainPrevBuffer?: Int32Array;
 }
 
 export function createSequencePlannerState(): SequencePlannerState {
@@ -35,6 +46,12 @@ export function createSequencePlannerState(): SequencePlannerState {
     historyBytes: new Uint8Array(0),
     historyChainPrev: new Int32Array(0),
     historyHeads,
+    _combinedBuffer: new Uint8Array(MAX_COMBINED),
+    _literalsBuffer: new Uint8Array(MAX_BLOCK_SIZE),
+    _chainPrevBuffer: new Int32Array(MAX_COMBINED),
+    _headsBuffer: new Int32Array(HASH_SIZE),
+    _historyBytesBuffer: new Uint8Array(WINDOW_SIZE),
+    _historyChainPrevBuffer: new Int32Array(WINDOW_SIZE),
   };
 }
 
@@ -60,17 +77,23 @@ function hash3(data: Uint8Array, pos: number): number {
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if ((a[i] ?? 0) !== (b[i] ?? 0)) return false;
+  if (a === b) return true;
+  const len = a.length;
+  if (len !== b.length) return false;
+  for (let i = 0; i < len; i++) {
+    if (a[i] !== b[i]) return false;
   }
   return true;
 }
 
 function buildChainPrev(data: Uint8Array, historyLength: number, plannerState?: SequencePlannerState): Int32Array {
-  const heads = new Int32Array(HASH_SIZE);
+  const dataLen = data.length;
+  const reuseHeads = plannerState?._headsBuffer;
+  const reuseChain = plannerState?._chainPrevBuffer;
+  const heads = reuseHeads && reuseHeads.length >= HASH_SIZE ? reuseHeads : new Int32Array(HASH_SIZE);
   heads.fill(-1);
-  const chainPrev = new Int32Array(data.length);
+  const chainPrev =
+    reuseChain && reuseChain.length >= dataLen ? reuseChain.subarray(0, dataLen) : new Int32Array(dataLen);
   chainPrev.fill(-1);
   let startPos = 0;
   if (
@@ -84,13 +107,13 @@ function buildChainPrev(data: Uint8Array, historyLength: number, plannerState?: 
     heads.set(plannerState.historyHeads);
     startPos = historyLength;
   }
-  for (let pos = startPos; pos + MIN_MATCH <= data.length; pos++) {
+  for (let pos = startPos; pos + MIN_MATCH <= dataLen; pos++) {
     const h = hash3(data, pos);
     const prev = heads[h]!;
     chainPrev[pos] = prev;
     heads[h] = pos;
   }
-  return chainPrev;
+  return chainPrev.length === dataLen ? chainPrev : chainPrev.subarray(0, dataLen);
 }
 
 function updatePlannerState(
@@ -101,15 +124,19 @@ function updatePlannerState(
   if (!plannerState) return;
   const historyStart = Math.max(0, combined.length - WINDOW_SIZE);
   const historyLength = combined.length - historyStart;
-  const historyBytes = new Uint8Array(historyLength);
+  const hbb = plannerState._historyBytesBuffer;
+  const hcb = plannerState._historyChainPrevBuffer;
+  const historyBytes =
+    hbb && hbb.length >= historyLength ? hbb.subarray(0, historyLength) : new Uint8Array(historyLength);
   historyBytes.set(combined.subarray(historyStart), 0);
-  const historyChainPrev = new Int32Array(historyLength);
+  const historyChainPrev =
+    hcb && hcb.length >= historyLength ? hcb.subarray(0, historyLength) : new Int32Array(historyLength);
   for (let pos = 0; pos < historyLength; pos++) {
     const globalPos = historyStart + pos;
     const prev = chainPrev[globalPos] ?? -1;
     historyChainPrev[pos] = prev >= historyStart ? prev - historyStart : -1;
   }
-  const historyHeads = new Int32Array(HASH_SIZE);
+  const historyHeads = plannerState.historyHeads;
   historyHeads.fill(-1);
   for (let pos = 0; pos + MIN_MATCH <= historyLength; pos++) {
     const h = hash3(historyBytes, pos);
@@ -117,7 +144,6 @@ function updatePlannerState(
   }
   plannerState.historyBytes = historyBytes;
   plannerState.historyChainPrev = historyChainPrev;
-  plannerState.historyHeads = historyHeads;
 }
 
 function longestMatch(data: Uint8Array, pos: number, candidate: number, maxLength: number): number {
@@ -237,13 +263,21 @@ function copyLiterals(dst: Uint8Array, dstOffset: number, data: Uint8Array, srcS
   return dstOffset + (srcEnd - srcStart);
 }
 
+/** Single reusable candidate to avoid object allocation in pickMatch hot path. */
+const pickMatchScratch: MatchCandidate = { pos: 0, offset: 0, length: 0, score: 0 };
+
 function pickMatch(parse: ParseState, pos: number): MatchCandidate | null {
   const direct = findBestMatchAt(parse, pos, parse.repOffsets);
   if (parse.options.searchWindow <= 1) return direct;
   let best = direct;
   let bestScore = best?.score ?? 0;
   const end = Math.min(parse.input.length - MIN_MATCH, pos + parse.options.searchWindow - 1);
-  const maxRepBonus = Math.max(...parse.options.repScoreBonus);
+  const repBonus = parse.options.repScoreBonus;
+  const maxRepBonus = repBonus[0]! >= repBonus[1]! && repBonus[0]! >= repBonus[2]!
+    ? repBonus[0]!
+    : repBonus[1]! >= repBonus[2]!
+      ? repBonus[1]!
+      : repBonus[2]!;
   for (let probePos = pos + 1; probePos <= end; probePos++) {
     const delayed = probePos - pos;
     const maxProbeLength = parse.input.length - probePos;
@@ -257,12 +291,22 @@ function pickMatch(parse: ParseState, pos: number): MatchCandidate | null {
     if (!probe) continue;
     const delayedScore = probe.score - delayed * 8;
     if (!best || delayedScore > bestScore) {
-      best = { ...probe, score: delayedScore };
+      pickMatchScratch.pos = probe.pos;
+      pickMatchScratch.offset = probe.offset;
+      pickMatchScratch.length = probe.length;
+      pickMatchScratch.score = delayedScore;
+      best = pickMatchScratch;
       bestScore = delayedScore;
     }
   }
+  if (best === pickMatchScratch) {
+    return { pos: best.pos, offset: best.offset, length: best.length, score: best.score };
+  }
   return best;
 }
+
+/** Reusable candidate for lazy-depth loop to avoid object spread allocation. */
+const lazyMatchScratch: MatchCandidate = { pos: 0, offset: 0, length: 0, score: 0 };
 
 export function planSequences(input: Uint8Array, options: SequencePlannerOptions): GreedyEncodeResult {
   if (input.length < MIN_MATCH) {
@@ -279,7 +323,10 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
       ? options.history.subarray(Math.max(0, options.history.length - WINDOW_SIZE))
       : new Uint8Array(0);
   const historyLength = history.length;
-  const combined = new Uint8Array(historyLength + input.length);
+  const combinedLen = historyLength + input.length;
+  const combinedBuf = options.plannerState?._combinedBuffer;
+  const combined =
+    combinedBuf && combinedBuf.length >= combinedLen ? combinedBuf.subarray(0, combinedLen) : new Uint8Array(combinedLen);
   if (historyLength > 0) combined.set(history, 0);
   combined.set(input, historyLength);
 
@@ -296,7 +343,11 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
   };
 
   const sequences: Sequence[] = [];
-  const literals = new Uint8Array(input.length);
+  const literalsBuf = options.plannerState?._literalsBuffer;
+  const literals =
+    literalsBuf && literalsBuf.length >= input.length
+      ? literalsBuf.subarray(0, input.length)
+      : new Uint8Array(input.length);
   let literalOut = 0;
   let anchor = historyLength;
   let pos = historyLength;
@@ -308,12 +359,21 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
       for (let delta = 1; delta <= maxDelta; delta++) {
         const candidate = findBestMatchAt(parse, pos + delta, parse.repOffsets);
         if (!candidate) continue;
-        if (candidate.score > best.score + delta * 8) best = { ...candidate };
+        if (candidate.score > best.score + delta * 8) {
+          lazyMatchScratch.pos = candidate.pos;
+          lazyMatchScratch.offset = candidate.offset;
+          lazyMatchScratch.length = candidate.length;
+          lazyMatchScratch.score = candidate.score;
+          best = lazyMatchScratch;
+        }
       }
     }
     if (!best || best.length < MIN_MATCH) {
       pos++;
       continue;
+    }
+    if (best === pickMatchScratch || best === lazyMatchScratch) {
+      best = { pos: best.pos, offset: best.offset, length: best.length, score: best.score };
     }
 
     const matchPos = best.pos;
@@ -334,8 +394,10 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
   const trailingLiterals = combined.length - anchor;
   literalOut = copyLiterals(literals, literalOut, combined, anchor, combined.length);
   updatePlannerState(options.plannerState, combined, parse.chainPrev);
+  const literalsOut =
+    literalOut < literals.length ? literals.subarray(0, literalOut) : literals;
   return {
-    literals: literalOut < literals.length ? literals.subarray(0, literalOut) : literals,
+    literals: literalsOut,
     sequences,
     trailingLiterals,
     finalRepOffsets: [parse.repOffsets[0], parse.repOffsets[1], parse.repOffsets[2]],

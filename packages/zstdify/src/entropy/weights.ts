@@ -14,18 +14,16 @@ export function readWeightsDirect(
   data: Uint8Array,
   offset: number,
   numWeights: number,
-): { weights: number[]; bytesRead: number } {
-  const bytesNeeded = Math.ceil(numWeights / 2);
+): { weights: Uint8Array; bytesRead: number } {
+  const bytesNeeded = (numWeights + 1) >>> 1;
   if (offset + bytesNeeded > data.length) {
     throw new ZstdError('Huffman weights truncated', 'corruption_detected');
   }
-  const weights: number[] = [];
+  const weights = new Uint8Array(numWeights);
   for (let i = 0; i < numWeights; i++) {
-    const byteIdx = Math.floor(i / 2);
-    const byte = data[offset + byteIdx];
-    if (byte === undefined) throw new ZstdError('Huffman weights truncated', 'corruption_detected');
-    const nibble = (i & 1) === 0 ? (byte >> 4) & 0xf : byte & 0xf;
-    weights.push(nibble);
+    const byteIdx = i >>> 1;
+    const byte = data[offset + byteIdx]!;
+    weights[i] = (i & 1) === 0 ? (byte >>> 4) & 0xf : byte & 0xf;
   }
   return { weights, bytesRead: bytesNeeded };
 }
@@ -41,7 +39,7 @@ export function readWeightsFSE(
   data: Uint8Array,
   offset: number,
   compressedSize: number,
-): { weights: number[]; bytesRead: number } {
+): { weights: Uint8Array; bytesRead: number } {
   if (compressedSize < 2) {
     throw new ZstdError('FSE-compressed weights: need at least 2 bytes', 'corruption_detected');
   }
@@ -83,33 +81,33 @@ export function readWeightsFSE(
       if (abs < 0) continue;
       const byteIndex = abs >>> 3;
       const bitInByte = abs & 7;
-      const bit = ((stream[byteIndex] ?? 0) >>> bitInByte) & 1;
-      value |= bit << i;
+      value |= ((stream[byteIndex]! >>> bitInByte) & 1) << i;
     }
     return value;
   };
 
-  const weights: number[] = [];
+  const weights = new Uint8Array(255);
+  let weightIdx = 0;
   const state1 = { value: readBitsZeroExtended(tableLog) };
   const state2 = { value: readBitsZeroExtended(tableLog) };
 
-  while (weights.length < 255) {
+  while (weightIdx < 255) {
     if (state1.value < 0 || state1.value >= table.length) {
       throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
     }
     const sym1 = table.symbol[state1.value]!;
     const bits1 = table.numBits[state1.value]!;
     const baseline1 = table.baseline[state1.value]!;
-    weights.push(sym1);
+    weights[weightIdx++] = sym1;
     state1.value = baseline1 + readBitsZeroExtended(bits1);
     if (bitOffset < 0) {
       if (state2.value < 0 || state2.value >= table.length) {
         throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
       }
-      weights.push(table.symbol[state2.value]!);
+      weights[weightIdx++] = table.symbol[state2.value]!;
       break;
     }
-    if (weights.length >= 255) break;
+    if (weightIdx >= 255) break;
 
     if (state2.value < 0 || state2.value >= table.length) {
       throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
@@ -117,20 +115,20 @@ export function readWeightsFSE(
     const sym2 = table.symbol[state2.value]!;
     const bits2 = table.numBits[state2.value]!;
     const baseline2 = table.baseline[state2.value]!;
-    weights.push(sym2);
+    weights[weightIdx++] = sym2;
     state2.value = baseline2 + readBitsZeroExtended(bits2);
     if (bitOffset < 0) {
       if (state1.value < 0 || state1.value >= table.length) {
         throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
       }
-      weights.push(table.symbol[state1.value]!);
+      weights[weightIdx++] = table.symbol[state1.value]!;
       break;
     }
   }
 
-  if (weights.length < 2) {
+  if (weightIdx < 2) {
     throw new ZstdError('FSE-compressed weights: need at least 2 weights', 'corruption_detected');
   }
 
-  return { weights, bytesRead: compressedSize };
+  return { weights: weights.subarray(0, weightIdx), bytesRead: compressedSize };
 }

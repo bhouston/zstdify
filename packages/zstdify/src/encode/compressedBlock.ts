@@ -449,7 +449,7 @@ function getNormalizedTableCandidates(
       if (matched) continue;
     }
     const { normalizedCounter, maxSymbolValue: normalizedMaxSymbolValue } = normalizeCountsForTable(
-      Array.from(histogram),
+      histogram,
       tableLog,
     );
     const header = writeNCount(normalizedCounter, normalizedMaxSymbolValue, tableLog);

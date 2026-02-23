@@ -117,7 +117,7 @@ export function decodeRLELiterals(data: Uint8Array, offset: number, size: number
   return result;
 }
 
-function weightsToHuffmanTable(weights: number[]): {
+function weightsToHuffmanTable(weights: ArrayLike<number>): {
   table: ReturnType<typeof buildHuffmanDecodeTable>;
   maxNumBits: number;
 } {
@@ -136,10 +136,8 @@ function weightsToHuffmanTable(weights: number[]): {
     throw new ZstdError('Invalid Huffman weights: cannot complete to power of 2', 'corruption_detected');
   }
   const lastWeight = 32 - Math.clz32(remainder);
-  const fullWeights = new Array<number>(256).fill(0);
-  for (let i = 0; i < weights.length; i++) {
-    fullWeights[i] = weights[i] ?? 0;
-  }
+  const fullWeights = new Uint8Array(256);
+  fullWeights.set(weights as Uint8Array, 0);
   fullWeights[weights.length] = lastWeight;
 
   const numBits = weightsToNumBits(fullWeights, maxNumBits);
@@ -378,7 +376,7 @@ export function decodeCompressedLiterals(
   const headerByte = data[pos]!;
   pos++;
 
-  let weights: number[];
+  let weights: Uint8Array;
   let treeBytes: number;
 
   if (headerByte >= 128) {

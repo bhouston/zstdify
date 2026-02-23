@@ -35,25 +35,29 @@ function selectCompressionStrategy(level: number): CompressionStrategy | null {
   return 'optimal';
 }
 
+/** Single reusable buffer for appendHistory to avoid per-block allocations. */
+let historyBuffer: Uint8Array | null = null;
+
 function appendHistory(history: Uint8Array<ArrayBufferLike>, chunk: Uint8Array<ArrayBufferLike>): Uint8Array {
   if (chunk.length === 0) return history;
+  if (!historyBuffer || historyBuffer.length < WINDOW_SIZE) {
+    historyBuffer = new Uint8Array(WINDOW_SIZE);
+  }
+  const out = historyBuffer;
   if (chunk.length >= WINDOW_SIZE) {
-    const out = new Uint8Array(WINDOW_SIZE);
     out.set(chunk.subarray(chunk.length - WINDOW_SIZE), 0);
-    return out;
+    return out.subarray(0, WINDOW_SIZE);
   }
   const total = history.length + chunk.length;
   if (total <= WINDOW_SIZE) {
-    const out = new Uint8Array(total);
     out.set(history, 0);
     out.set(chunk, history.length);
-    return out;
+    return out.subarray(0, total);
   }
   const keepFromHistory = WINDOW_SIZE - chunk.length;
-  const out = new Uint8Array(WINDOW_SIZE);
   out.set(history.subarray(history.length - keepFromHistory), 0);
   out.set(chunk, keepFromHistory);
-  return out;
+  return out.subarray(0, WINDOW_SIZE);
 }
 
 export function compress(input: Uint8Array, options?: CompressOptions): Uint8Array {

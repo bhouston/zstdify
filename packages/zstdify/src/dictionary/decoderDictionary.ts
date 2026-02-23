@@ -20,7 +20,7 @@ export interface DecoderDictionaryContext {
   sequenceTables: SequenceTables | null;
 }
 
-function buildHuffmanTableFromWeights(weights: number[]): HuffmanTable {
+function buildHuffmanTableFromWeights(weights: ArrayLike<number>): HuffmanTable {
   let partialSum = 0;
   for (let i = 0; i < weights.length; i++) {
     const w = weights[i] ?? 0;
@@ -36,10 +36,9 @@ function buildHuffmanTableFromWeights(weights: number[]): HuffmanTable {
     throw new ZstdError('Invalid Huffman weights: cannot complete to power of 2', 'corruption_detected');
   }
   const lastWeight = 32 - Math.clz32(remainder);
-  const fullWeights = [...weights, lastWeight];
-  while (fullWeights.length < 256) {
-    fullWeights.push(0);
-  }
+  const fullWeights = new Uint8Array(256);
+  fullWeights.set(weights as Uint8Array, 0);
+  fullWeights[weights.length] = lastWeight;
   const numBits = weightsToNumBits(fullWeights, maxNumBits);
   return {
     table: buildHuffmanDecodeTable(numBits, maxNumBits),
@@ -53,7 +52,7 @@ function parseDictionaryHuffmanTable(data: Uint8Array, offset: number): { table:
   }
   const headerByte = data[offset] ?? 0;
   let pos = offset + 1;
-  let weights: number[];
+  let weights: Uint8Array;
   if (headerByte >= 128) {
     const numWeights = headerByte - 127;
     const direct = readWeightsDirect(data, pos, numWeights);

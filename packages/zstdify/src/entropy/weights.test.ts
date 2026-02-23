@@ -11,7 +11,7 @@ describe('weights', () => {
     it('returns weights for valid direct input', () => {
       // 2 weights in 1 byte: high nibble and low nibble
       const { weights, bytesRead } = readWeightsDirect(new Uint8Array([0x12]), 0, 2);
-      expect(weights).toEqual([1, 2]);
+      expect(Array.from(weights)).toEqual([1, 2]);
       expect(bytesRead).toBe(1);
     });
   });
