@@ -13,6 +13,15 @@ describe('skippable frame', () => {
     expect(isSkippableFrame(magic, 0)).toBe(true);
   });
 
+  it('accepts full skippable magic range and rejects out-of-range value', () => {
+    const minMagic = new Uint8Array([0x50, 0x2a, 0x4d, 0x18]);
+    const maxMagic = new Uint8Array([0x5f, 0x2a, 0x4d, 0x18]);
+    const outOfRange = new Uint8Array([0x60, 0x2a, 0x4d, 0x18]);
+    expect(isSkippableFrame(minMagic, 0)).toBe(true);
+    expect(isSkippableFrame(maxMagic, 0)).toBe(true);
+    expect(isSkippableFrame(outOfRange, 0)).toBe(false);
+  });
+
   it('getSkippableFrameSize returns payload size and throws when truncated', () => {
     const magic = new Uint8Array([0x50, 0x2a, 0x4d, 0x18]);
     const sizeBytes = new Uint8Array(4);
@@ -44,5 +53,15 @@ describe('skippable frame', () => {
     truncated.set(magic, 0);
     truncated.set(sizeBytes, 4);
     expect(() => skipSkippableFrame(truncated, 0)).toThrow(/truncated payload/i);
+  });
+
+  it('returns full 32-bit size and rejects max-size truncation', () => {
+    const magic = new Uint8Array([0x50, 0x2a, 0x4d, 0x18]);
+    const sizeBytes = new Uint8Array([0xff, 0xff, 0xff, 0xff]);
+    const header = new Uint8Array(8);
+    header.set(magic, 0);
+    header.set(sizeBytes, 4);
+    expect(getSkippableFrameSize(header, 0)).toBe(0xffff_ffff);
+    expect(() => skipSkippableFrame(header, 0)).toThrow(/truncated payload/i);
   });
 });

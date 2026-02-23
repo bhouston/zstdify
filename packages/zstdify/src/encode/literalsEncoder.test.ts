@@ -11,6 +11,35 @@ function buildLiteralsSectionPayload(literals: Uint8Array, context?: SequenceEnt
 }
 
 describe('literals section round-trip', () => {
+  it('uses raw for tiny literals and compressed for larger literals', () => {
+    const small = new Uint8Array(7);
+    for (let i = 0; i < small.length; i++) {
+      small[i] = (i & 1) as 0 | 1;
+    }
+    const large = new Uint8Array(80);
+    for (let i = 0; i < large.length; i++) {
+      large[i] = (i & 1) as 0 | 1;
+    }
+
+    const smallPayload = buildLiteralsSectionPayload(small);
+    const smallParsed = parseLiteralsSectionHeader(smallPayload, 0);
+    expect(smallParsed.header.blockType).toBe(0);
+    expect(smallParsed.header.regeneratedSize).toBe(small.length);
+    expect(smallPayload.subarray(smallParsed.dataOffset, smallParsed.dataOffset + small.length)).toEqual(small);
+
+    const largePayload = buildLiteralsSectionPayload(large);
+    const largeParsed = parseLiteralsSectionHeader(largePayload, 0);
+    expect(largeParsed.header.blockType).toBe(2);
+    const largeDecoded = decodeCompressedLiterals(
+      largePayload,
+      largeParsed.dataOffset,
+      largeParsed.header.compressedSize!,
+      largeParsed.header.regeneratedSize,
+      largeParsed.header.numStreams,
+    );
+    expect(largeDecoded.literals).toEqual(large);
+  });
+
   it('round-trips compressed literals section for large repetitive input', () => {
     const literals = new Uint8Array(5000);
     for (let i = 0; i < literals.length; i++) {

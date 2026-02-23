@@ -1,5 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { parseZstdFrame } from './frameHeader.js';
+import { ZstdError } from '../errors.js';
+import { parseFrameHeader, parseZstdFrame } from './frameHeader.js';
+
+function buildFrameHeaderBytes(
+  fhd: number,
+  wd: number | null,
+  dictBytes: Uint8Array,
+  fcsBytes: Uint8Array,
+): Uint8Array {
+  const out = new Uint8Array(4 + 1 + (wd === null ? 0 : 1) + dictBytes.length + fcsBytes.length);
+  out.set([0x28, 0xb5, 0x2f, 0xfd], 0);
+  out[4] = fhd & 0xff;
+  let pos = 5;
+  if (wd !== null) {
+    out[pos] = wd & 0xff;
+    pos++;
+  }
+  out.set(dictBytes, pos);
+  pos += dictBytes.length;
+  out.set(fcsBytes, pos);
+  return out;
+}
+
+function didSize(flag: number): number {
+  return [0, 1, 2, 4][flag] ?? 0;
+}
+
+function fcsSize(flag: number, singleSegment: boolean): number {
+  if (flag === 0) return singleSegment ? 1 : 0;
+  if (flag === 1) return 2;
+  if (flag === 2) return 4;
+  return 8;
+}
 
 describe('frameHeader', () => {
   it('parses minimal frame header (no window, no content size, no dict)', () => {
@@ -96,5 +128,111 @@ describe('frameHeader', () => {
   it('rejects input too short for magic', () => {
     const data = new Uint8Array([0x28, 0xb5, 0x2f]);
     expect(() => parseZstdFrame(data, 0)).toThrow(/too short|magic/i);
+  });
+
+  it('parses all valid frame-header descriptor combinations', () => {
+    const didCases: ReadonlyArray<Uint8Array> = [
+      new Uint8Array([]),
+      new Uint8Array([0x7f]),
+      new Uint8Array([0x34, 0x12]),
+      new Uint8Array([0x78, 0x56, 0x34, 0x12]),
+    ];
+    const fcsCases: ReadonlyArray<Uint8Array> = [
+      new Uint8Array([0x11]),
+      new Uint8Array([0x34, 0x12]),
+      new Uint8Array([0x78, 0x56, 0x34, 0x12]),
+      new Uint8Array([0xef, 0xcd, 0xab, 0x89, 0x01, 0x00, 0x00, 0x00]),
+    ];
+
+    for (const singleSegment of [false, true]) {
+      for (let dictionaryIdFlag = 0; dictionaryIdFlag <= 3; dictionaryIdFlag++) {
+        for (let frameContentSizeFlag = 0; frameContentSizeFlag <= 3; frameContentSizeFlag++) {
+          for (const checksum of [false, true]) {
+            const fhd =
+              (frameContentSizeFlag << 6) |
+              ((singleSegment ? 1 : 0) << 5) |
+              ((checksum ? 1 : 0) << 2) |
+              dictionaryIdFlag;
+
+            const wd = singleSegment ? null : 0x00;
+            const dictBytes = didCases[dictionaryIdFlag]!;
+            const fcsFieldSize = fcsSize(frameContentSizeFlag, singleSegment);
+            const fcsBytes = fcsFieldSize > 0 ? fcsCases[frameContentSizeFlag]!.subarray(0, fcsFieldSize) : new Uint8Array(0);
+            const data = buildFrameHeaderBytes(fhd, wd, dictBytes, fcsBytes);
+            const { header } = parseZstdFrame(data, 0);
+            const expectedDictionaryId =
+              dictionaryIdFlag === 0
+                ? null
+                : dictionaryIdFlag === 1
+                  ? 0x7f
+                  : dictionaryIdFlag === 2
+                    ? 0x1234
+                    : 0x12345678;
+
+            const expectedHeaderSize = 1 + (singleSegment ? 0 : 1) + didSize(dictionaryIdFlag) + fcsFieldSize;
+            expect(header.headerSize).toBe(expectedHeaderSize);
+            expect(header.singleSegment).toBe(singleSegment);
+            expect(header.hasContentChecksum).toBe(checksum);
+            expect(header.dictionaryId).toBe(expectedDictionaryId);
+            expect(header.contentSize).toBe(
+              fcsFieldSize === 0
+                ? null
+                : fcsFieldSize === 1
+                  ? 0x11
+                  : fcsFieldSize === 2
+                    ? 256 + 0x1234
+                    : fcsFieldSize === 4
+                      ? 0x12345678
+                      : 0x1_89abcdef,
+            );
+            expect(header.windowSize).toBe(singleSegment ? (header.contentSize ?? 0) : 1024);
+          }
+        }
+      }
+    }
+  });
+
+  it('rejects truncation at each header byte for representative shapes', () => {
+    const representative = [
+      buildFrameHeaderBytes(0x00, 0x00, new Uint8Array([]), new Uint8Array([])),
+      buildFrameHeaderBytes(0x26, null, new Uint8Array([0x01, 0x00]), new Uint8Array([0x10, 0x00])),
+      buildFrameHeaderBytes(0xe7, null, new Uint8Array([0x78, 0x56, 0x34, 0x12]), new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00])),
+    ];
+
+    for (const frame of representative) {
+      const parsed = parseZstdFrame(frame, 0);
+      const requiredLength = 4 + parsed.header.headerSize;
+      for (let cut = 0; cut < requiredLength; cut++) {
+        const truncated = frame.subarray(0, cut);
+        expect(() => parseZstdFrame(truncated, 0)).toThrow();
+      }
+    }
+  });
+
+  it('handles hostile offsets and random byte inputs without runtime exceptions', () => {
+    expect(() => parseZstdFrame(new Uint8Array([0x28, 0xb5, 0x2f, 0xfd]), Number.MAX_SAFE_INTEGER)).toThrow();
+    expect(() => parseFrameHeader(new Uint8Array([0x00, 0x00]), Number.MAX_SAFE_INTEGER)).toThrow();
+
+    let state = 0x1234abcd;
+    for (let i = 0; i < 400; i++) {
+      const len = state & 63;
+      const bytes = new Uint8Array(len);
+      for (let j = 0; j < len; j++) {
+        state = (state * 1664525 + 1013904223) >>> 0;
+        bytes[j] = state & 0xff;
+      }
+      try {
+        parseZstdFrame(bytes, 0);
+      } catch (err) {
+        expect(err).not.toBeInstanceOf(RangeError);
+        expect(err).toBeInstanceOf(ZstdError);
+      }
+      try {
+        parseFrameHeader(bytes, 0);
+      } catch (err) {
+        expect(err).not.toBeInstanceOf(RangeError);
+        expect(err).toBeInstanceOf(ZstdError);
+      }
+    }
   });
 });
