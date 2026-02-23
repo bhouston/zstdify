@@ -1,36 +1,18 @@
-import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { compress, decompress, generateDictionary } from 'zstdify';
-import { requireZstdCli } from '../helpers/zstdCli.js';
-
-function zstdCompressWithDict(input: Uint8Array, dictPath: string): Uint8Array {
-  const result = spawnSync('zstd', ['-q', '-c', '-D', dictPath, '--no-check'], {
-    input: Buffer.from(input),
-    encoding: null,
-  });
-  if (result.status !== 0) {
-    throw new Error(`zstd dictionary compress failed: ${result.stderr?.toString() ?? 'unknown error'}`);
-  }
-  return new Uint8Array(result.stdout);
-}
-
-function zstdDecompressWithDict(input: Uint8Array, dictPath: string): Uint8Array {
-  const result = spawnSync('zstd', ['-q', '-d', '-c', '-D', dictPath], {
-    input: Buffer.from(input),
-    encoding: null,
-  });
-  if (result.status !== 0) {
-    throw new Error(`zstd dictionary decompress failed: ${result.stderr?.toString() ?? 'unknown error'}`);
-  }
-  return new Uint8Array(result.stdout);
-}
+import {
+  requireZstdCli,
+  zstdCompressWithDictionary,
+  zstdDecompressWithDictionary,
+  zstdTrainDictionary,
+} from '../helpers/zstdCli.js';
 
 describe('differential dictionaries: zstd -> zstdify', () => {
   requireZstdCli();
-  it('round-trips raw-content dictionary streams across a small payload matrix', () => {
+  it('round-trips raw-content dictionary streams across a small payload matrix', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-diff-'));
     try {
       const dictPath = join(tempRoot, 'raw-content.dict');
@@ -41,31 +23,32 @@ describe('differential dictionaries: zstd -> zstdify', () => {
 
       const payloads = ['vertex normal index', 'alpha beta gamma', 'short', 'header vertex texture'];
 
-      for (const text of payloads) {
+      const checks = payloads.map(async (text) => {
         const payload = new TextEncoder().encode(text);
-        const encoded = zstdCompressWithDict(payload, dictPath);
-        expect(zstdDecompressWithDict(encoded, dictPath)).toEqual(payload);
+        const encoded = await zstdCompressWithDictionary(payload, dictPath);
+        expect(await zstdDecompressWithDictionary(encoded, dictPath)).toEqual(payload);
         expect(decompress(encoded, { dictionary: dictionaryBytes })).toEqual(payload);
-      }
+      });
+      await Promise.all(checks);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('rejects dictionary-compressed frames when no dictionary is provided', () => {
+  it('rejects dictionary-compressed frames when no dictionary is provided', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-diff-'));
     try {
       const dictPath = join(tempRoot, 'raw-content.dict');
       writeFileSync(dictPath, 'alpha beta gamma delta');
       const payload = new TextEncoder().encode('alpha beta gamma');
-      const encoded = zstdCompressWithDict(payload, dictPath);
+      const encoded = await zstdCompressWithDictionary(payload, dictPath);
       expect(() => decompress(encoded)).toThrow();
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('trained dictionaries with entropy/repeat-offset modes', () => {
+  it('trained dictionaries with entropy/repeat-offset modes', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-diff-'));
     try {
       const dictPath = join(tempRoot, 'trained.dict');
@@ -88,18 +71,13 @@ describe('differential dictionaries: zstd -> zstdify', () => {
         writeFileSync(samplePath, sampleText);
       }
 
-      const train = spawnSync('zstd', ['--train', ...samplePaths, '--maxdict=2048', '-o', dictPath, '--quiet'], {
-        encoding: null,
-      });
-      if (train.status !== 0) {
-        throw new Error(`zstd dictionary training failed: ${train.stderr?.toString() ?? 'unknown error'}`);
-      }
+      zstdTrainDictionary(samplePaths, dictPath, 2048);
 
       const dictionaryBytes = new Uint8Array(readFileSync(dictPath));
       const payload = new TextEncoder().encode('offset match literal sequence table');
-      const encoded = zstdCompressWithDict(payload, dictPath);
+      const encoded = await zstdCompressWithDictionary(payload, dictPath);
 
-      expect(zstdDecompressWithDict(encoded, dictPath)).toEqual(payload);
+      expect(await zstdDecompressWithDictionary(encoded, dictPath)).toEqual(payload);
       expect(() => decompress(encoded)).toThrow();
       expect(decompress(encoded, { dictionary: dictionaryBytes })).toEqual(payload);
     } finally {
@@ -107,7 +85,7 @@ describe('differential dictionaries: zstd -> zstdify', () => {
     }
   });
 
-  it('zstd interoperates with zstdify-generated raw dictionaries', () => {
+  it('zstd interoperates with zstdify-generated raw dictionaries', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-diff-'));
     try {
       const dictPath = join(tempRoot, 'generated.dict');
@@ -121,11 +99,11 @@ describe('differential dictionaries: zstd -> zstdify', () => {
       writeFileSync(dictPath, Buffer.from(dictionaryBytes));
 
       const payload = new TextEncoder().encode('header vertex texture offset match literal sequence table');
-      const encodedByZstd = zstdCompressWithDict(payload, dictPath);
+      const encodedByZstd = await zstdCompressWithDictionary(payload, dictPath);
       expect(decompress(encodedByZstd, { dictionary: dictionaryBytes })).toEqual(payload);
 
       const encodedByZstdify = compress(payload, { dictionary: dictionaryBytes, noDictId: true });
-      expect(zstdDecompressWithDict(encodedByZstdify, dictPath)).toEqual(payload);
+      expect(await zstdDecompressWithDictionary(encodedByZstdify, dictPath)).toEqual(payload);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

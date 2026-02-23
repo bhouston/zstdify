@@ -1,12 +1,24 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { compress, decompress, generateDictionary } from 'zstdify';
+import {
+  requireZstdCli,
+  zstdCompress,
+  zstdCompressWithDictionary,
+  zstdDecompressWithDictionary,
+  zstdTrainDictionary,
+} from '../helpers/zstdCli.js';
 
 const LEVEL = 3;
 const DICT_SIZE_BYTES = 4096;
+const ZSTD_CLI_DICT_SIZE_BYTES = 3072;
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 function sha256(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex');
@@ -39,6 +51,54 @@ function nodeDecompressWithDictionary(data: Uint8Array, dictionary: Uint8Array):
 
 function nodeDecompressWithoutDictionary(data: Uint8Array): Uint8Array {
   return new Uint8Array(zlib.zstdDecompressSync(Buffer.from(data)));
+}
+
+async function withTempDictionaryPath<T>(dictionary: Uint8Array, fn: (dictPath: string) => Promise<T>): Promise<T> {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-corpus-'));
+  try {
+    const dictPath = join(tempRoot, 'dictionary.dict');
+    writeFileSync(dictPath, Buffer.from(dictionary));
+    return await fn(dictPath);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function buildZstdCliDictionary(trainingSamples: Uint8Array[], maxDictSize: number): Uint8Array {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-train-'));
+  try {
+    const expandedSamples = [...trainingSamples];
+    let expansionIndex = 0;
+    // zstd CLI training rejects very small sample counts; pad with slight variants.
+    while (expandedSamples.length < 8) {
+      const base = trainingSamples[expansionIndex % trainingSamples.length];
+      if (base === undefined) {
+        throw new Error('Training sample missing');
+      }
+      const suffix = encoder.encode(`\ntrain-variant-${expandedSamples.length}`);
+      const variant = new Uint8Array(base.length + suffix.length);
+      variant.set(base, 0);
+      variant.set(suffix, base.length);
+      expandedSamples.push(variant);
+      expansionIndex++;
+    }
+
+    const samplePaths = expandedSamples.map((_, index) => join(tempRoot, `sample-${index}.txt`));
+    for (const [index, samplePath] of samplePaths.entries()) {
+      const sample = expandedSamples[index];
+      if (sample === undefined) {
+        throw new Error('Training sample missing');
+      }
+      writeFileSync(samplePath, Buffer.from(sample));
+    }
+
+    const dictPath = join(tempRoot, 'trained.dict');
+    zstdTrainDictionary(samplePaths, dictPath, maxDictSize);
+
+    return new Uint8Array(readFileSync(dictPath));
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 }
 
 type DictCase = {
@@ -95,10 +155,21 @@ function loadCaseFromFixture(id: string): DictCase {
   };
 }
 
+function payloadLineSamples(payload: Uint8Array, maxSamples: number): Uint8Array[] {
+  const lines = decoder
+    .decode(payload)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return lines.slice(0, maxSamples).map((line) => encoder.encode(line));
+}
+
 const CASE_IDS = ['http-log-like-text', 'json-event-like-text', 'code-token-like-text'] as const;
 const CASES: DictCase[] = CASE_IDS.map((id) => loadCaseFromFixture(id));
 
 describe('interop: dictionary training (fast minimal cases, zstdify <-> Node zstd)', () => {
+  requireZstdCli();
+
   for (const c of CASES) {
     it(`${c.id}: Node decodes zstdify frame without dictionary`, () => {
       const zstdifyWithoutDictionary = compress(c.payload, {
@@ -175,4 +246,76 @@ describe('interop: dictionary training (fast minimal cases, zstdify <-> Node zst
       expect(sha256(nodeDecompressWithDictionary(zstdifyWithDictionary, dictionary))).toBe(sha256(c.payload));
     });
   }
+
+  for (const c of CASES) {
+    it(`${c.id}: zstdify-trained dictionary is valid for zstd CLI and improves zstd CLI ratio`, async () => {
+      const dictionary = generateDictionary(c.trainingSamples, {
+        maxDictSize: DICT_SIZE_BYTES,
+        algorithm: 'fastcover',
+      });
+      expect(dictionary.length).toBeGreaterThan(0);
+
+      const zstdWithoutDictionary = await zstdCompress(c.payload, ['-3', '--no-check']);
+      const zstdWithDictionary = await withTempDictionaryPath(dictionary, (dictPath) =>
+        zstdCompressWithDictionary(c.payload, dictPath),
+      );
+      expect(zstdWithDictionary.length).toBeLessThan(zstdWithoutDictionary.length);
+
+      expect(sha256(decompress(zstdWithDictionary, { dictionary }))).toBe(sha256(c.payload));
+
+      const zstdifyWithDictionary = compress(c.payload, {
+        level: LEVEL,
+        dictionary,
+        noDictId: true,
+      });
+      const zstdCliDecoded = await withTempDictionaryPath(dictionary, (dictPath) =>
+        zstdDecompressWithDictionary(zstdifyWithDictionary, dictPath),
+      );
+      expect(sha256(zstdCliDecoded)).toBe(sha256(c.payload));
+    });
+  }
+
+  it(`${knownGoodCase.id}: zstd CLI-trained dictionary is valid for zstdify`, async () => {
+    const zstdCliDictionary = buildZstdCliDictionary(
+      [
+        ...knownGoodCase.trainingSamples,
+        ...payloadLineSamples(knownGoodCase.payload, 96),
+      ],
+      ZSTD_CLI_DICT_SIZE_BYTES,
+    );
+    expect(zstdCliDictionary.length).toBeGreaterThan(0);
+
+    const zstdCliCompressed = await withTempDictionaryPath(zstdCliDictionary, (dictPath) =>
+      zstdCompressWithDictionary(knownGoodCase.payload, dictPath),
+    );
+
+    expect(sha256(decompress(zstdCliCompressed, { dictionary: zstdCliDictionary }))).toBe(sha256(knownGoodCase.payload));
+
+    const zstdifyWithDictionary = compress(knownGoodCase.payload, {
+      level: LEVEL,
+      dictionary: zstdCliDictionary,
+      noDictId: true,
+    });
+    const zstdCliDecoded = await withTempDictionaryPath(zstdCliDictionary, (dictPath) =>
+      zstdDecompressWithDictionary(zstdifyWithDictionary, dictPath),
+    );
+    expect(sha256(zstdCliDecoded)).toBe(sha256(knownGoodCase.payload));
+  });
+
+  it(`${knownGoodCase.id}: zstd CLI-trained dictionary improves zstd CLI ratio`, async () => {
+    const zstdCliDictionary = buildZstdCliDictionary(
+      [
+        ...knownGoodCase.trainingSamples,
+        ...payloadLineSamples(knownGoodCase.payload, 96),
+      ],
+      ZSTD_CLI_DICT_SIZE_BYTES,
+    );
+    expect(zstdCliDictionary.length).toBeGreaterThan(0);
+
+    const zstdCliWithoutDictionary = await zstdCompress(knownGoodCase.payload, ['-3', '--no-check']);
+    const zstdCliWithDictionary = await withTempDictionaryPath(zstdCliDictionary, (dictPath) =>
+      zstdCompressWithDictionary(knownGoodCase.payload, dictPath),
+    );
+    expect(zstdCliWithDictionary.length).toBeLessThan(zstdCliWithoutDictionary.length);
+  });
 });

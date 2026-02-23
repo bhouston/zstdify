@@ -19,8 +19,8 @@ describe('differential: zstd -> zstdify', () => {
 
   for (const { name, data } of corpus) {
     for (const level of levels) {
-      it(`round-trips ${name} at level ${level}`, () => {
-        const encoded = zstdCompress(data, ['--no-check', level]);
+      it(`round-trips ${name} at level ${level}`, async () => {
+        const encoded = await zstdCompress(data, ['--no-check', level]);
         const decoded = decompress(encoded);
         expect(decoded).toEqual(data);
       });

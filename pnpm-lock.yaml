@@ -93,6 +93,9 @@ importers:
       rollup:
         specifier: ^4.58.0
         version: 4.58.0
+      simple-zstd:
+        specifier: ^2.0.0
+        version: 2.0.0
       tinybench:
         specifier: ^6.0.0
         version: 6.0.0
@@ -898,6 +901,9 @@ packages:
   is-reference@1.2.1:
     resolution: {integrity: sha512-U82MsXXiFIrjCK4otLT+o2NA2Cd2g5MLoOVXUZjIOhLurrRxpEXzI8O0KZHr3IjLvlAH1kTPYSuqer5T9ZVBKQ==}
 
+  is-zst@1.0.0:
+    resolution: {integrity: sha512-ZA5lvshKAl8z30dX7saXLpVhpsq3d2EHK9uf7qtUjnOtdw4XBpAoWb2RvZ5kyoaebdoidnGI0g2hn9Z7ObPbww==}
+
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
@@ -1068,6 +1074,10 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
 
+  simple-zstd@2.0.0:
+    resolution: {integrity: sha512-kFf+30as+c40jlLjzC2CGSA3hvO6SD3dBCQtD4ItAhZPnviIxmBiYvCa+Ry2jAVRAYBUWMLNhJQe1rG23Arhhw==}
+    engines: {node: '>=20.0.0'}
+
   smob@1.6.1:
     resolution: {integrity: sha512-KAkBqZl3c2GvNgNhcoyJae1aKldDW0LO279wF9bk1PnluRTETKBq0WyzRXxEhoQLk56yHaOY4JCBEKDuJIET5g==}
     engines: {node: '>=20.0.0'}
@@ -1143,6 +1153,13 @@ packages:
   tinyspy@3.0.2:
     resolution: {integrity: sha512-n1cw8k1k0x4pgA2+9XrOkFydTerNcJ1zWCO5Nn9scWHTD+5tp8dghT2x1uduQePZTZgd3Tupf+x9BxJjeJi77Q==}
     engines: {node: '>=14.0.0'}
+
+  tmp-promise@3.0.3:
+    resolution: {integrity: sha512-RwM7MoPojPxsOBYnyd2hy0bxtIlVrihNs9pj5SUvY8Zz1sQcQG2tG1hSr8PDxfgEB8RNKDhqbIlroIarSNDNsQ==}
+
+  tmp@0.2.5:
+    resolution: {integrity: sha512-voyz6MApa1rQGUxT3E+BK7/ROe8itEx7vD8/HEvt4xwXucvQ5G5oeEiHkmHZJuBO21RpOf+YYm9MOivj709jow==}
+    engines: {node: '>=14.14'}
 
   topojson-client@3.1.0:
     resolution: {integrity: sha512-605uxS6bcYxGXw9qi62XyrV6Q3xwbndjachmNxu8HWTtVPxZfEJN9fd/SZS1Q54Sn2y0TMyMxFj/cJINqGHrKw==}
@@ -2001,6 +2018,8 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.8
 
+  is-zst@1.0.0: {}
+
   isexe@2.0.0: {}
 
   istanbul-lib-coverage@3.2.2: {}
@@ -2174,6 +2193,15 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
+  simple-zstd@2.0.0:
+    dependencies:
+      debug: 4.4.3
+      is-zst: 1.0.0
+      tmp: 0.2.5
+      tmp-promise: 3.0.3
+    transitivePeerDependencies:
+      - supports-color
+
   smob@1.6.1: {}
 
   source-map-js@1.2.1: {}
@@ -2239,6 +2267,12 @@ snapshots:
   tinyrainbow@1.2.0: {}
 
   tinyspy@3.0.2: {}
+
+  tmp-promise@3.0.3:
+    dependencies:
+      tmp: 0.2.5
+
+  tmp@0.2.5: {}
 
   topojson-client@3.1.0:
     dependencies:
