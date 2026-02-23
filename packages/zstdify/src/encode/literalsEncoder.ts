@@ -71,9 +71,9 @@ function buildRawLiteralsSection(literals: Uint8Array): Uint8Array | null {
 
 function buildRLELiteralsSection(literals: Uint8Array): Uint8Array | null {
   if (literals.length === 0) return null;
-  const value = literals[0] ?? 0;
+  const value = literals[0]!;
   for (let i = 1; i < literals.length; i++) {
-    if ((literals[i] ?? 0) !== value) return null;
+    if (literals[i]! !== value) return null;
   }
   const size = literals.length;
   if (size <= 31) {
@@ -93,7 +93,7 @@ function buildHuffmanDepths(freq: Uint32Array): Uint8Array | null {
   const nodes: Node[] = [];
   const active: number[] = [];
   for (let s = 0; s < freq.length; s++) {
-    const f = freq[s] ?? 0;
+    const f = freq[s]!;
     if (f > 0) {
       nodes.push({ freq: f, symbol: s, left: -1, right: -1 });
       active.push(nodes.length - 1);
@@ -102,17 +102,17 @@ function buildHuffmanDepths(freq: Uint32Array): Uint8Array | null {
   if (active.length < 2) return null;
   while (active.length > 1) {
     active.sort((a, b) => {
-      const fa = nodes[a]?.freq ?? 0;
-      const fb = nodes[b]?.freq ?? 0;
+      const fa = nodes[a]!.freq;
+      const fb = nodes[b]!.freq;
       if (fa !== fb) return fa - fb;
-      return (nodes[a]?.symbol ?? 0) - (nodes[b]?.symbol ?? 0);
+      return nodes[a]!.symbol - nodes[b]!.symbol;
     });
     const leftIdx = active.shift();
     const rightIdx = active.shift();
     if (leftIdx === undefined || rightIdx === undefined) return null;
     const merged: Node = {
-      freq: (nodes[leftIdx]?.freq ?? 0) + (nodes[rightIdx]?.freq ?? 0),
-      symbol: Math.min(nodes[leftIdx]?.symbol ?? 0, nodes[rightIdx]?.symbol ?? 0),
+      freq: nodes[leftIdx]!.freq + nodes[rightIdx]!.freq,
+      symbol: Math.min(nodes[leftIdx]!.symbol, nodes[rightIdx]!.symbol),
       left: leftIdx,
       right: rightIdx,
     };
@@ -143,8 +143,8 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
   let maxSymbol = 0;
   const freq = new Uint32Array(256);
   for (let i = 0; i < literals.length; i++) {
-    const b = literals[i] ?? 0;
-    freq[b] = (freq[b] ?? 0) + 1;
+    const b = literals[i]!;
+    freq[b] = freq[b]! + 1;
     if (b > maxSymbol) maxSymbol = b;
   }
   let weights: number[];
@@ -160,7 +160,7 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
     if (!depths) return null;
     let maxDepth = 0;
     for (let s = 0; s <= pseudoSymbol; s++) {
-      const d = depths[s] ?? 0;
+      const d = depths[s]!;
       if (d > maxDepth) maxDepth = d;
     }
     if (maxDepth <= 0 || maxDepth > 11) return null;
@@ -168,11 +168,11 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
 
     weights = new Array<number>(maxSymbol + 1).fill(0);
     for (let s = 0; s <= maxSymbol; s++) {
-      const d = depths[s] ?? 0;
+      const d = depths[s]!;
       if (d > 0) weights[s] = maxDepth + 1 - d;
     }
-    for (let i = 0; i < weights.length; i++) fullWeights[i] = weights[i] ?? 0;
-    const pseudoDepth = depths[pseudoSymbol] ?? 0;
+    for (let i = 0; i < weights.length; i++) fullWeights[i] = weights[i]!;
+    const pseudoDepth = depths[pseudoSymbol]!;
     if (pseudoDepth <= 0) return null;
     fullWeights[pseudoSymbol] = maxDepth + 1 - pseudoDepth;
   } else {
@@ -182,7 +182,7 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
     if (!depths) return null;
     let maxDepth = 0;
     for (let s = 0; s < 256; s++) {
-      const d = depths[s] ?? 0;
+      const d = depths[s]!;
       if (d > maxDepth) maxDepth = d;
     }
     if (maxDepth <= 0 || maxDepth > 11) return null;
@@ -190,12 +190,12 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
 
     weights = new Array<number>(255).fill(0);
     for (let s = 0; s < 256; s++) {
-      const d = depths[s] ?? 0;
+      const d = depths[s]!;
       if (d > 0) fullWeights[s] = maxDepth + 1 - d;
     }
-    if ((fullWeights[255] ?? 0) <= 0) return null;
+    if (fullWeights[255]! <= 0) return null;
     for (let s = 0; s < 255; s++) {
-      weights[s] = fullWeights[s] ?? 0;
+      weights[s] = fullWeights[s]!;
     }
   }
 
@@ -209,14 +209,14 @@ function buildFrequencyHuffmanTable(literals: Uint8Array): HuffmanBuildResult | 
     if (bits === 0) continue;
     const symbol = decodeTable.symbol[i]! >>> 0;
     if (symbol >= codeBySymbol.length) return null;
-    if ((codeBySymbol[symbol] ?? -1) < 0) {
+    if (codeBySymbol[symbol]! < 0) {
       codeBySymbol[symbol] = i >>> (maxNumBits - bits);
       numBitsBySymbol[symbol] = bits;
     }
   }
   for (let i = 0; i < literals.length; i++) {
-    const sym = literals[i] ?? 0;
-    if ((codeBySymbol[sym] ?? -1) < 0 || (numBitsBySymbol[sym] ?? 0) === 0) return null;
+    const sym = literals[i]!;
+    if (codeBySymbol[sym]! < 0 || numBitsBySymbol[sym]! === 0) return null;
   }
   return { weights, table: { maxNumBits, codeBySymbol, numBitsBySymbol } };
 }
@@ -230,9 +230,9 @@ function encodeLiteralsWithTable(
   const bitCounts = scratch.counts.subarray(0, literals.length);
   const bitValues = scratch.values.subarray(0, literals.length);
   for (let i = 0; i < literals.length; i++) {
-    const sym = literals[i] ?? 0;
-    const bits = table.numBitsBySymbol[sym] ?? 0;
-    const code = table.codeBySymbol[sym] ?? -1;
+    const sym = literals[i]!;
+    const bits = table.numBitsBySymbol[sym]!;
+    const code = table.codeBySymbol[sym]!;
     if (bits <= 0 || code < 0) return null;
     bitCounts[i] = bits;
     bitValues[i] = code;
@@ -270,7 +270,7 @@ function buildFSEUpdatePath(
   if (updateSymbols.length === 0) {
     if (requiredFinalSymbol === null) return null;
     for (let state = 0; state < tableSize; state++) {
-      if ((table.symbol[state] ?? -1) === requiredFinalSymbol) {
+      if (table.symbol[state]! === requiredFinalSymbol) {
         return { states: [], updateBits: [], startState: state };
       }
     }
@@ -285,21 +285,21 @@ function buildFSEUpdatePath(
 
   const finalRowOffset = rowOffset(rowCount);
   for (let state = 0; state < tableSize; state++) {
-    if (requiredFinalSymbol === null || (table.symbol[state] ?? -1) === requiredFinalSymbol) {
+    if (requiredFinalSymbol === null || table.symbol[state]! === requiredFinalSymbol) {
       reachable[finalRowOffset + state] = 1;
     }
   }
 
   for (let row = rowCount - 1; row >= 0; row--) {
-    const symbol = updateSymbols[row] ?? -1;
+    const symbol = updateSymbols[row]!;
     if (symbol < 0 || symbol > WEIGHT_MAX_SYMBOL) return null;
     const curOffset = rowOffset(row);
     const nextOffset = rowOffset(row + 1);
     let anyReachable = false;
     for (let state = 0; state < tableSize; state++) {
-      if ((table.symbol[state] ?? -1) !== symbol) continue;
-      const baseline = table.baseline[state] ?? 0;
-      const bits = table.numBits[state] ?? 0;
+      if (table.symbol[state]! !== symbol) continue;
+      const baseline = table.baseline[state]!;
+      const bits = table.numBits[state]!;
       const width = bits > 0 ? 1 << bits : 1;
       let minNext = baseline;
       let maxNext = baseline + width - 1;
@@ -331,9 +331,9 @@ function buildFSEUpdatePath(
   let state = startState;
   for (let row = 0; row < rowCount; row++) {
     states[row] = state;
-    const next = nextChoice[rowOffset(row) + state] ?? -1;
+    const next = nextChoice[rowOffset(row) + state]!;
     if (next < 0) return null;
-    updateBits[row] = next - (table.baseline[state] ?? 0);
+    updateBits[row] = next - table.baseline[state]!;
     state = next;
   }
 
@@ -431,8 +431,8 @@ function createDirectWeightsTreeBytes(weights: number[]): Uint8Array | null {
   const tree = new Uint8Array(1 + Math.ceil(weights.length / 2));
   tree[0] = 127 + weights.length;
   for (let i = 0; i < weights.length; i += 2) {
-    const hi = weights[i] ?? 0;
-    const lo = weights[i + 1] ?? 0;
+    const hi = weights[i]!;
+    const lo = weights[i + 1]!;
     tree[1 + (i >>> 1)] = ((hi & 0x0f) << 4) | (lo & 0x0f);
   }
   return tree;
@@ -442,32 +442,32 @@ function createFSEWeightsTreeBytes(weights: number[]): Uint8Array | null {
   if (weights.length < 2 || weights.length > 255) return null;
   let maxWeight = 0;
   for (let i = 0; i < weights.length; i++) {
-    const value = weights[i] ?? 0;
+    const value = weights[i]!;
     if (value < 0 || value > WEIGHT_MAX_SYMBOL) return null;
     if (value > maxWeight) maxWeight = value;
   }
 
   const histogram = new Array<number>(maxWeight + 1).fill(0);
   for (let i = 0; i < weights.length; i++) {
-    const value = weights[i] ?? 0;
-    histogram[value] = (histogram[value] ?? 0) + 1;
+    const value = weights[i]!;
+    histogram[value] = histogram[value]! + 1;
   }
 
   const stream1: number[] = [];
   const stream2: number[] = [];
   for (let i = 0; i < weights.length; i++) {
-    if ((i & 1) === 0) stream1.push(weights[i] ?? 0);
-    else stream2.push(weights[i] ?? 0);
+    if ((i & 1) === 0) stream1.push(weights[i]!);
+    else stream2.push(weights[i]!);
   }
   const tailOnStream1 = (weights.length & 1) === 1;
   const stream1Updates = tailOnStream1 ? stream1.slice(0, -1) : stream1.slice();
   const stream2Updates = tailOnStream1 ? stream2.slice() : stream2.slice(0, -1);
-  const stream1Tail = tailOnStream1 ? (stream1[stream1.length - 1] ?? null) : null;
-  const stream2Tail = tailOnStream1 ? null : (stream2[stream2.length - 1] ?? null);
+  const stream1Tail = tailOnStream1 ? stream1[stream1.length - 1]! : null;
+  const stream2Tail = tailOnStream1 ? null : stream2[stream2.length - 1]!;
   const updateCount = weights.length - 1;
   const usedSymbols: number[] = [];
   for (let symbol = 0; symbol < histogram.length; symbol++) {
-    if ((histogram[symbol] ?? 0) > 0) usedSymbols.push(symbol);
+    if (histogram[symbol]! > 0) usedSymbols.push(symbol);
   }
   if (usedSymbols.length === 0) return null;
 
@@ -478,14 +478,14 @@ function createFSEWeightsTreeBytes(weights: number[]): Uint8Array | null {
     if (usedSymbols.length <= tableSize) {
       const uniform = new Array<number>(maxWeight + 1).fill(0);
       for (let i = 0; i < usedSymbols.length; i++) {
-        const symbol = usedSymbols[i] ?? -1;
+        const symbol = usedSymbols[i]!;
         if (symbol >= 0) uniform[symbol] = 1;
       }
       let remaining = tableSize - usedSymbols.length;
       let cursor = 0;
       while (remaining > 0) {
-        const symbol = usedSymbols[cursor % usedSymbols.length] ?? -1;
-        if (symbol >= 0) uniform[symbol] = (uniform[symbol] ?? 0) + 1;
+        const symbol = usedSymbols[cursor % usedSymbols.length]!;
+        if (symbol >= 0) uniform[symbol] = uniform[symbol]! + 1;
         remaining--;
         cursor++;
       }
@@ -513,16 +513,16 @@ function createFSEWeightsTreeBytes(weights: number[]): Uint8Array | null {
       let stream2Pos = 0;
       for (let i = 0; i < updateCount; i++) {
         if ((i & 1) === 0) {
-          const state = path1.states[stream1Pos] ?? -1;
+          const state = path1.states[stream1Pos]!;
           if (state < 0) return null;
-          readCounts[readPos] = table.numBits[state] ?? 0;
-          readValues[readPos++] = path1.updateBits[stream1Pos] ?? 0;
+          readCounts[readPos] = table.numBits[state]!;
+          readValues[readPos++] = path1.updateBits[stream1Pos]!;
           stream1Pos++;
         } else {
-          const state = path2.states[stream2Pos] ?? -1;
+          const state = path2.states[stream2Pos]!;
           if (state < 0) return null;
-          readCounts[readPos] = table.numBits[state] ?? 0;
-          readValues[readPos++] = path2.updateBits[stream2Pos] ?? 0;
+          readCounts[readPos] = table.numBits[state]!;
+          readValues[readPos++] = path2.updateBits[stream2Pos]!;
           stream2Pos++;
         }
       }
@@ -538,7 +538,7 @@ function createFSEWeightsTreeBytes(weights: number[]): Uint8Array | null {
       if (roundTrip.length !== weights.length) continue;
       let mismatch = false;
       for (let i = 0; i < weights.length; i++) {
-        if ((roundTrip[i] ?? -1) !== (weights[i] ?? -1)) {
+        if (roundTrip[i]! !== weights[i]!) {
           mismatch = true;
           break;
         }
@@ -557,8 +557,8 @@ function createWeightsTreeBytes(weights: number[]): Uint8Array | null {
 
 function canEncodeTreeless(table: LiteralEntropyTable, literals: Uint8Array): boolean {
   for (let i = 0; i < literals.length; i++) {
-    const sym = literals[i] ?? 0;
-    if ((table.codeBySymbol[sym] ?? -1) < 0 || (table.numBitsBySymbol[sym] ?? 0) === 0) return false;
+    const sym = literals[i]!;
+    if (table.codeBySymbol[sym]! < 0 || table.numBitsBySymbol[sym]! === 0) return false;
   }
   return true;
 }

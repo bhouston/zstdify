@@ -18,11 +18,13 @@ import {
   parseLiteralsSectionHeader,
 } from './literals.js';
 import {
+  DECODE_OUTPUT_BUFFER_INITIAL,
   appendRangeToHistoryWindow,
   appendRLEToHistoryWindow,
   appendToHistoryWindow,
   type DecoderReuseBag,
   getOrCreateHistoryWindow,
+  getOrCreateLiteralsScratch,
 } from './reconstruct.js';
 import type { SequenceTables } from './sequences.js';
 
@@ -41,12 +43,31 @@ export function decompressFrame(
   if (knownOutputSize !== null && maxSize !== undefined && knownOutputSize > maxSize) {
     throw new ZstdError('Decompressed size exceeds maxSize', 'parameter_unsupported');
   }
-  let outputBuffer = knownOutputSize !== null ? new Uint8Array(knownOutputSize) : new Uint8Array(0);
+
+  let outputBuffer: Uint8Array;
+  let usedReuseOutputBuffer = false;
+  if (knownOutputSize !== null) {
+    outputBuffer = new Uint8Array(knownOutputSize);
+  } else {
+    const reuseBuf = reuseContext?._outputBuffer;
+    if (reuseBuf && reuseBuf.length >= DECODE_OUTPUT_BUFFER_INITIAL) {
+      outputBuffer = reuseBuf;
+      usedReuseOutputBuffer = true;
+    } else {
+      outputBuffer = new Uint8Array(DECODE_OUTPUT_BUFFER_INITIAL);
+      if (reuseContext) {
+        reuseContext._outputBuffer = outputBuffer;
+      }
+      usedReuseOutputBuffer = true;
+    }
+  }
+
   let totalSize = 0;
   const repOffsets: [number, number, number] = dictionary?.repOffsets
     ? [dictionary.repOffsets[0], dictionary.repOffsets[1], dictionary.repOffsets[2]]
     : [1, 4, 8];
   const history = getOrCreateHistoryWindow(header.windowSize, dictionary?.historyPrefix, reuseContext);
+  const literalsScratch = getOrCreateLiteralsScratch(reuseContext);
   let prevHuffmanTable: {
     table: ReturnType<typeof import('../entropy/huffman.js').buildHuffmanDecodeTable>;
     maxNumBits: number;
@@ -58,7 +79,7 @@ export function decompressFrame(
     if (needed <= outputBuffer.length) {
       return;
     }
-    let nextCapacity = outputBuffer.length === 0 ? 64 * 1024 : outputBuffer.length;
+    let nextCapacity = outputBuffer.length === 0 ? DECODE_OUTPUT_BUFFER_INITIAL : outputBuffer.length;
     while (nextCapacity < needed) {
       nextCapacity *= 2;
     }
@@ -67,6 +88,9 @@ export function decompressFrame(
       grown.set(outputBuffer.subarray(0, totalSize), 0);
     }
     outputBuffer = grown;
+    if (reuseContext) {
+      reuseContext._outputBuffer = outputBuffer;
+    }
   };
 
   const appendOutput = (chunk: Uint8Array): void => {
@@ -137,7 +161,12 @@ export function decompressFrame(
         literals = decodeRawLiterals(blockContent, litDataOffset, litHeader.regeneratedSize);
         litBytesConsumed = litHeader.headerSize + litHeader.regeneratedSize;
       } else if (litHeader.blockType === 1) {
-        literals = decodeRLELiterals(blockContent, litDataOffset, litHeader.regeneratedSize);
+        literals = decodeRLELiterals(
+          blockContent,
+          litDataOffset,
+          litHeader.regeneratedSize,
+          literalsScratch,
+        );
         litBytesConsumed = litHeader.headerSize + 1;
       } else if (litHeader.blockType === 2) {
         const comp = decodeCompressedLiterals(
@@ -146,6 +175,7 @@ export function decompressFrame(
           litHeader.compressedSize!,
           litHeader.regeneratedSize,
           litHeader.numStreams,
+          literalsScratch,
         );
         literals = comp.literals;
         prevHuffmanTable = comp.huffmanTable;
@@ -161,6 +191,7 @@ export function decompressFrame(
           litHeader.regeneratedSize,
           litHeader.numStreams,
           prevHuffmanTable,
+          literalsScratch,
         );
         literals = comp.literals;
         litBytesConsumed = litHeader.headerSize + comp.bytesRead;
@@ -232,7 +263,8 @@ export function decompressFrame(
     if (block.lastBlock) break;
   }
 
-  const output = outputBuffer.subarray(0, totalSize);
+  const output =
+    usedReuseOutputBuffer ? new Uint8Array(outputBuffer.subarray(0, totalSize)) : outputBuffer.subarray(0, totalSize);
   if (header.contentSize !== null && output.length !== header.contentSize) {
     throw new ZstdError('Frame content size mismatch', 'corruption_detected');
   }

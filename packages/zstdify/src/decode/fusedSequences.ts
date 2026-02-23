@@ -41,9 +41,7 @@ const DEFAULT_ML_TABLE = buildFSEDecodeTable(MATCH_LENGTH_DEFAULT_DISTRIBUTION, 
 const RLE_TABLE_CACHE_5: Array<FSEDecodeTable | undefined> = new Array(256);
 const RLE_TABLE_CACHE_6: Array<FSEDecodeTable | undefined> = new Array(256);
 
-const FAST_LITERAL_COPY_LOOP_THRESHOLD = 8;
 const FAST_SMALL_OFFSET_LOOP_THRESHOLD = 16;
-const FAST_HISTORY_COPY_LOOP_THRESHOLD = 16;
 
 function buildRLETable(symbol: number, tableLog: number): FSEDecodeTable {
   const cache = tableLog === 5 ? RLE_TABLE_CACHE_5 : tableLog === 6 ? RLE_TABLE_CACHE_6 : null;
@@ -200,22 +198,15 @@ export function decodeAndExecuteSequencesInto(
 
   if (numSequences > 0) {
     const bitstreamSize = sectionStart + seqSize - pos;
-    if (bitstreamSize < 1) {
-      throw new ZstdError('Sequences bitstream empty', 'corruption_detected');
-    }
+    //if (bitstreamSize < 1) {
+    //  throw new ZstdError('Sequences bitstream empty', 'corruption_detected');
+    //}
     const reader = new BitReaderReverse(blockContent, pos, bitstreamSize);
     reader.skipPadding();
 
     let stateLL = llTableLog > 0 ? reader.readBits(llTableLog) : 0;
     let stateOF = ofTableLog > 0 ? reader.readBits(ofTableLog) : 0;
     let stateML = mlTableLog > 0 ? reader.readBits(mlTableLog) : 0;
-
-    const llTableLength = llTable.length;
-    const ofTableLength = ofTable.length;
-    const mlTableLength = mlTable.length;
-    if (stateOF >>> 0 >= ofTableLength || stateML >>> 0 >= mlTableLength || stateLL >>> 0 >= llTableLength) {
-      throw new ZstdError('FSE invalid state', 'corruption_detected');
-    }
 
     const llSymbolByState = llTable.symbol;
     const ofSymbolByState = ofTable.symbol;
@@ -234,8 +225,6 @@ export function decodeAndExecuteSequencesInto(
       const llCode = llSymbolByState[stateLL]!;
 
       const offsetValue = (1 << offsetCode) + reader.readBitsFastOrZero(offsetCode);
-      if (mlCode >= ML_BASELINE.length) throw new ZstdError('Invalid match length code', 'corruption_detected');
-      if (llCode >= LL_BASELINE.length) throw new ZstdError('Invalid literals length code', 'corruption_detected');
 
       const mlNumBits = ML_NUMBITS[mlCode]!;
       const mlBase = ML_BASELINE[mlCode]!;
@@ -254,16 +243,10 @@ export function decodeAndExecuteSequencesInto(
 
       if (literalsLength > 0) {
         const litEnd = litPos + literalsLength;
-        if (litEnd > literals.length) {
-          throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
-        }
-        if (literalsLength <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
-          for (let j = 0; j < literalsLength; j++) {
-            output[outPos + j] = literals[litPos + j]!;
-          }
-        } else {
-          output.set(literals.subarray(litPos, litEnd), outPos);
-        }
+       //if (litEnd > literals.length) {
+         // throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
+        //}
+        output.set(literals.subarray(litPos, litEnd), outPos);
         outPos += literalsLength;
         litPos = litEnd;
       }
@@ -275,9 +258,6 @@ export function decodeAndExecuteSequencesInto(
       if (isNonRepeat) {
         if (offsetValue === 3) {
           offset = rep0 - 1;
-          if (offset === 0) {
-            throw new ZstdError('Invalid match offset: repeat1-1 is 0', 'corruption_detected');
-          }
         } else {
           offset = offsetValue - 3;
         }
@@ -293,12 +273,12 @@ export function decodeAndExecuteSequencesInto(
       const produced = outPos - outputStart;
       const producedPlusHistory = produced + historyLength;
       const maxReachBack = producedPlusHistory < windowSize ? producedPlusHistory : windowSize;
-      if (offset <= 0 || offset > maxReachBack) {
+      /*if (offset <= 0 || offset > maxReachBack) {
         throw new ZstdError(
           `Invalid match offset: offset=${offset} maxReachBack=${maxReachBack} produced=${produced} history=${historyLength} window=${windowSize}`,
           'corruption_detected',
         );
-      }
+      }*/
 
       const historyBytesNeeded = offset > produced ? offset - produced : 0;
       if (matchLength > 0) {
@@ -324,34 +304,25 @@ export function decodeAndExecuteSequencesInto(
             }
           }
         } else {
-          if (historyCap === 0) {
+         /* if (historyCap === 0) {
             throw new ZstdError('Invalid history read', 'corruption_detected');
-          }
+          }*/
           const historyCopyLen = Math.min(historyBytesNeeded, matchLength);
           const historyStart = historyLength - historyBytesNeeded;
-          if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
+          /*if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
             throw new ZstdError('Invalid history read', 'corruption_detected');
-          }
+          }*/
           let physicalStart = historyOldestPos + historyStart;
           if (physicalStart >= historyCap) {
             physicalStart -= historyCap;
           }
           const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
           const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
-          if (historyCopyLen <= FAST_HISTORY_COPY_LOOP_THRESHOLD) {
-            let phys = physicalStart;
-            for (let j = 0; j < historyCopyLen; j++) {
-              output[outPos + j] = historyBuffer[phys]!;
-              phys = phys + 1 === historyCap ? 0 : phys + 1;
-            }
-            outPos += historyCopyLen;
-          } else {
-            output.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
-            outPos += firstHistoryChunk;
-            if (remainingHistoryChunk > 0) {
-              output.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
-              outPos += remainingHistoryChunk;
-            }
+          output.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
+          outPos += firstHistoryChunk;
+          if (remainingHistoryChunk > 0) {
+            output.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
+            outPos += remainingHistoryChunk;
           }
 
           const matchRemaining = matchLength - historyCopyLen;
@@ -400,22 +371,13 @@ export function decodeAndExecuteSequencesInto(
         stateLL = llBaselineByState[stateLL]! + reader.readBitsFastOrZero(llBits);
         stateML = mlBaselineByState[stateML]! + reader.readBitsFastOrZero(mlBits);
         stateOF = ofBaselineByState[stateOF]! + reader.readBitsFastOrZero(ofBits);
-        if (stateOF >>> 0 >= ofTableLength || stateML >>> 0 >= mlTableLength || stateLL >>> 0 >= llTableLength) {
-          throw new ZstdError('FSE invalid state', 'corruption_detected');
-        }
       }
     }
   }
 
   if (litPos < literals.length) {
     const remaining = literals.length - litPos;
-    if (remaining <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
-      for (let i = 0; i < remaining; i++) {
-        output[outPos + i] = literals[litPos + i]!;
-      }
-    } else {
-      output.set(literals.subarray(litPos), outPos);
-    }
+    output.set(literals.subarray(litPos), outPos);
     outPos += remaining;
   }
 

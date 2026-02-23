@@ -23,7 +23,7 @@ export interface DecoderDictionaryContext {
 function buildHuffmanTableFromWeights(weights: ArrayLike<number>): HuffmanTable {
   let partialSum = 0;
   for (let i = 0; i < weights.length; i++) {
-    const w = weights[i] ?? 0;
+    const w = weights[i]!;
     if (w > 0) partialSum += 1 << (w - 1);
   }
   if (partialSum === 0) {
@@ -50,7 +50,7 @@ function parseDictionaryHuffmanTable(data: Uint8Array, offset: number): { table:
   if (offset >= data.length) {
     throw new ZstdError('Dictionary Huffman table truncated', 'corruption_detected');
   }
-  const headerByte = data[offset] ?? 0;
+  const headerByte = data[offset]!;
   let pos = offset + 1;
   let weights: Uint8Array;
   if (headerByte >= 128) {

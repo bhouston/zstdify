@@ -90,6 +90,12 @@ export interface SequenceEntropyContext {
   prevLiteralsTable?: LiteralEntropyTable | null;
 }
 
+/** Optional scratch buffers for compress pipeline to reduce per-block allocations. */
+export interface CompressScratch {
+  reverseBitWriter: ReverseBitWriter;
+  literalsSectionBuffer: Uint8Array;
+}
+
 function getPrecomputedPathTable(table: FSEDecodeTable): PrecomputedPathTable {
   const cached = pathTableCache.get(table);
   if (cached) return cached;
@@ -122,13 +128,13 @@ function getPrecomputedPathTable(table: FSEDecodeTable): PrecomputedPathTable {
     if (!stateList || !stateMask) continue;
     stateList.push(s);
     stateMask[s >>> 5] = (stateMask[s >>> 5]! | (1 << (s & 31))) >>> 0;
-    bitTotalsBySymbol[sym] = (bitTotalsBySymbol[sym] ?? 0) + (table.numBits[s] ?? 0);
+    bitTotalsBySymbol[sym] = (bitTotalsBySymbol[sym] ?? 0) + table.numBits[s]!;
     stateCountsBySymbol[sym] = (stateCountsBySymbol[sym] ?? 0) + 1;
   }
   const avgBitsBySymbol = new Float64Array(maxSymbol + 1);
   for (let sym = 0; sym < avgBitsBySymbol.length; sym++) {
-    const count = stateCountsBySymbol[sym] ?? 0;
-    avgBitsBySymbol[sym] = count > 0 ? (bitTotalsBySymbol[sym] ?? 0) / count : Number.POSITIVE_INFINITY;
+    const count = stateCountsBySymbol[sym]!;
+    avgBitsBySymbol[sym] = count > 0 ? bitTotalsBySymbol[sym]! / count : Number.POSITIVE_INFINITY;
   }
   const precomputed = {
     tableSize,
@@ -175,8 +181,8 @@ function findLengthCode(
     return { code, extra: 0, extraN: 0 };
   }
   for (let code = 0; code < baseline.length; code++) {
-    const base = baseline[code] ?? 0;
-    const n = extraBits[code] ?? 0;
+    const base = baseline[code]!;
+    const n = extraBits[code]!;
     if (value >= base && value < base + (1 << n)) {
       return { code, extra: value - base, extraN: n };
     }
@@ -184,18 +190,24 @@ function findLengthCode(
   return null;
 }
 
+const numSequencesScratch = new Uint8Array(3);
+
 function encodeNumSequences(numSequences: number): Uint8Array | null {
   if (numSequences < 0 || numSequences > 0xffff + 0x7f00) return null;
   if (numSequences < 128) {
-    return new Uint8Array([numSequences & 0xff]);
+    numSequencesScratch[0] = numSequences & 0xff;
+    return numSequencesScratch.subarray(0, 1);
   }
   if (numSequences < 0x7f00) {
-    const hi = ((numSequences >>> 8) & 0x7f) + 0x80;
-    const lo = numSequences & 0xff;
-    return new Uint8Array([hi, lo]);
+    numSequencesScratch[0] = ((numSequences >>> 8) & 0x7f) + 0x80;
+    numSequencesScratch[1] = numSequences & 0xff;
+    return numSequencesScratch.subarray(0, 2);
   }
   const value = numSequences - 0x7f00;
-  return new Uint8Array([0xff, value & 0xff, (value >>> 8) & 0xff]);
+  numSequencesScratch[0] = 0xff;
+  numSequencesScratch[1] = value & 0xff;
+  numSequencesScratch[2] = (value >>> 8) & 0xff;
+  return numSequencesScratch.subarray(0, 3);
 }
 
 function buildStatePath(
@@ -212,7 +224,7 @@ function buildStatePath(
   nextChoice.fill(-1);
   const rowOffset = (rowIndex: number) => rowIndex * tableSize;
 
-  const lastCode = codes[rowCount - 1] ?? -1;
+  const lastCode = codes[rowCount - 1]!;
   if (lastCode < 0 || lastCode >= statesBySymbol.length) return null;
   const lastStates = statesBySymbol[lastCode];
   if (!lastStates || lastStates.length === 0) return null;
@@ -223,7 +235,7 @@ function buildStatePath(
   }
 
   for (let row = rowCount - 2; row >= 0; row--) {
-    const code = codes[row] ?? -1;
+    const code = codes[row]!;
     if (code < 0 || code >= statesBySymbol.length) return null;
     const candidateStates = statesBySymbol[code];
     if (!candidateStates || candidateStates.length === 0) return null;
@@ -251,7 +263,7 @@ function buildStatePath(
     if (!anyReachable) return null;
   }
 
-  const firstCode = codes[0] ?? -1;
+  const firstCode = codes[0]!;
   if (firstCode < 0 || firstCode >= statesBySymbol.length) return null;
   const firstStates = statesBySymbol[firstCode];
   if (!firstStates || firstStates.length === 0) return null;
@@ -340,7 +352,7 @@ interface StreamChoice {
 function symbolRange(codes: ArrayLike<number>): number {
   let max = 0;
   for (let i = 0; i < codes.length; i++) {
-    const value = codes[i] ?? 0;
+    const value = codes[i]!;
     if (value > max) max = value;
   }
   return max + 1;
@@ -349,9 +361,9 @@ function symbolRange(codes: ArrayLike<number>): number {
 function buildHistogram(codes: ArrayLike<number>, alphabetSize: number): Uint32Array {
   const out = new Uint32Array(alphabetSize);
   for (let i = 0; i < codes.length; i++) {
-    const c = codes[i] ?? 0;
+    const c = codes[i]!;
     if (c < 0 || c >= alphabetSize) continue;
-    out[c] = (out[c] ?? 0) + 1;
+    out[c] = out[c]! + 1;
   }
   return out;
 }
@@ -360,7 +372,7 @@ function scorePath(path: { states: number[] }, table: FSEDecodeTable, tableLog: 
   if (path.states.length === 0) return 0;
   let bits = tableLog;
   for (let i = 0; i < path.states.length - 1; i++) {
-    const state = path.states[i] ?? -1;
+    const state = path.states[i]!;
     if (state < 0 || state >= table.length) return Number.POSITIVE_INFINITY;
     bits += table.numBits[state]!;
   }
@@ -377,9 +389,9 @@ function estimatePathBitsFromHistogram(
   const avgBits = pre.avgBitsBySymbol;
   let bits = tableLog + extraHeaderBits;
   for (let sym = 0; sym < histogram.length; sym++) {
-    const freq = histogram[sym] ?? 0;
+    const freq = histogram[sym]!;
     if (freq <= 0) continue;
-    const avg = avgBits[sym] ?? Number.POSITIVE_INFINITY;
+    const avg = avgBits[sym]!;
     if (!Number.isFinite(avg)) {
       return Number.POSITIVE_INFINITY;
     }
@@ -400,7 +412,7 @@ const normalizedTableCache = new Map<string, NormalizedTableCacheEntry[]>();
 function hashHistogram(histogram: Uint32Array): number {
   let hash = 2166136261 >>> 0;
   for (let i = 0; i < histogram.length; i++) {
-    hash ^= histogram[i] ?? 0;
+    hash ^= histogram[i]!;
     hash = Math.imul(hash, 16777619) >>> 0;
   }
   return hash >>> 0;
@@ -409,7 +421,7 @@ function hashHistogram(histogram: Uint32Array): number {
 function histogramsEqual(a: Uint32Array, b: Uint32Array): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if ((a[i] ?? 0) !== (b[i] ?? 0)) return false;
+    if (a[i]! !== b[i]!) return false;
   }
   return true;
 }
@@ -424,7 +436,7 @@ function getNormalizedTableCandidates(
   const histogram = buildHistogram(codes, alphabetSize);
   let distinct = 0;
   for (let i = 0; i < histogram.length; i++) {
-    if ((histogram[i] ?? 0) > 0) distinct++;
+    if (histogram[i]! > 0) distinct++;
   }
   if (distinct <= 1) return [];
   let minTableLog = 5;
@@ -475,7 +487,7 @@ function getNormalizedTableCandidates(
 function getTableMaxSymbol(table: FSEDecodeTable): number {
   let max = 0;
   for (let i = 0; i < table.length; i++) {
-    const symbol = table.symbol[i] ?? 0;
+    const symbol = table.symbol[i]!;
     if (symbol > max) max = symbol;
   }
   return max;
@@ -714,18 +726,28 @@ function buildSequenceSection(
   };
 }
 
+export const LITERALS_SECTION_BUFFER_SIZE = 128 * 1024;
+
 export function buildCompressedBlockPayload(
   literals: Uint8Array,
   sequences: Sequence[],
   context?: SequenceEntropyContext,
+  scratch?: CompressScratch,
 ): Uint8Array | null {
-  const reverseBitWriter = new ReverseBitWriter();
+  const reverseBitWriter = scratch?.reverseBitWriter ?? new ReverseBitWriter();
   const literalsContext: LiteralEntropyContext = {
     prevTable: context?.prevLiteralsTable ?? null,
   };
   const encodedLiterals = encodeLiteralsSection(literals, literalsContext, reverseBitWriter);
   if (!encodedLiterals) return null;
-  const literalsSection = encodedLiterals.section;
+  const section = encodedLiterals.section;
+  let literalsSection: Uint8Array;
+  if (scratch && scratch.literalsSectionBuffer.length >= section.length) {
+    scratch.literalsSectionBuffer.set(section, 0);
+    literalsSection = scratch.literalsSectionBuffer.subarray(0, section.length);
+  } else {
+    literalsSection = section;
+  }
   const seqSection = buildSequenceSection(sequences, context, reverseBitWriter);
   if (!seqSection) return null;
   const out = new Uint8Array(literalsSection.length + seqSection.section.length);

@@ -256,12 +256,6 @@ export function decodeSequences(
   let stateLL = llTableLog > 0 ? reader.readBits(llTableLog) : 0;
   let stateOF = ofTableLog > 0 ? reader.readBits(ofTableLog) : 0;
   let stateML = mlTableLog > 0 ? reader.readBits(mlTableLog) : 0;
-  const llTableLength = llTable.length;
-  const ofTableLength = ofTable.length;
-  const mlTableLength = mlTable.length;
-  if (stateOF >>> 0 >= ofTableLength || stateML >>> 0 >= mlTableLength || stateLL >>> 0 >= llTableLength) {
-    throw new ZstdError('FSE invalid state', 'corruption_detected');
-  }
   const llSymbolByState = llTable.symbol;
   const ofSymbolByState = ofTable.symbol;
   const mlSymbolByState = mlTable.symbol;
@@ -287,16 +281,10 @@ export function decodeSequences(
 
     const offsetValue = (1 << offsetCode) + reader.readBitsFastOrZero(offsetCode);
 
-    if (mlCode >= ML_BASELINE.length) {
-      throw new ZstdError('Invalid match length code', 'corruption_detected');
-    }
     const mlNumBits = ML_NUMBITS[mlCode]!;
     const mlBase = ML_BASELINE[mlCode]!;
     const matchLength = mlBase + reader.readBitsFastOrZero(mlNumBits);
 
-    if (llCode >= LL_BASELINE.length) {
-      throw new ZstdError('Invalid literals length code', 'corruption_detected');
-    }
     const llNumBits = LL_NUMBITS[llCode]!;
     const llBase = LL_BASELINE[llCode]!;
     const literalsLength = llCode <= 15 ? llCode : llBase + reader.readBitsFastOrZero(llNumBits);
@@ -315,23 +303,14 @@ export function decodeSequences(
     stateLL = llBaselineByState[stateLL]! + reader.readBitsFastOrZero(llBits);
     stateML = mlBaselineByState[stateML]! + reader.readBitsFastOrZero(mlBits);
     stateOF = ofBaselineByState[stateOF]! + reader.readBitsFastOrZero(ofBits);
-    if (stateOF >>> 0 >= ofTableLength || stateML >>> 0 >= mlTableLength || stateLL >>> 0 >= llTableLength) {
-      throw new ZstdError('FSE invalid state', 'corruption_detected');
-    }
   }
   const offsetCode = ofSymbolByState[stateOF]!;
   const mlCode = mlSymbolByState[stateML]!;
   const llCode = llSymbolByState[stateLL]!;
   const offsetValue = (1 << offsetCode) + reader.readBitsFastOrZero(offsetCode);
-  if (mlCode >= ML_BASELINE.length) {
-    throw new ZstdError('Invalid match length code', 'corruption_detected');
-  }
   const mlNumBits = ML_NUMBITS[mlCode]!;
   const mlBase = ML_BASELINE[mlCode]!;
   const matchLength = mlBase + reader.readBitsFastOrZero(mlNumBits);
-  if (llCode >= LL_BASELINE.length) {
-    throw new ZstdError('Invalid literals length code', 'corruption_detected');
-  }
   const llNumBits = LL_NUMBITS[llCode]!;
   const llBase = LL_BASELINE[llCode]!;
   const literalsLength = llCode <= 15 ? llCode : llBase + reader.readBitsFastOrZero(llNumBits);

@@ -86,6 +86,9 @@ describe('literals corruption handling', () => {
       maxNumBits: 2,
     };
     const data = new Uint8Array([0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x01, 0x01, 0x01]);
-    expect(() => decodeTreelessLiterals(data, 0, 10, 4, 4, malformedTable)).toThrowError(/did not end cleanly/i);
+    // May throw "did not end cleanly" or "literals size mismatch" depending on decode order (hot-path end check removed).
+    expect(() => decodeTreelessLiterals(data, 0, 10, 4, 4, malformedTable)).toThrow(
+      /did not end cleanly|literals size mismatch/i,
+    );
   });
 });

@@ -44,7 +44,7 @@ export function buildHuffmanDecodeTable(numBits: ArrayLike<number>, maxNumBits: 
     if (len < 0 || len > maxNumBits) {
       throw new ZstdError('Huffman invalid bit length', 'corruption_detected');
     }
-    rankCount[len]++;
+    rankCount[len] = rankCount[len]! + 1;
   }
 
   const rankIdx = new Uint32Array(rankLen);
@@ -81,16 +81,16 @@ export function buildHuffmanDecodeTable(numBits: ArrayLike<number>, maxNumBits: 
  * Decode one Huffman symbol. Reader must be positioned at start of code.
  */
 export function decodeHuffmanSymbol(table: HuffmanDecodeTable, reader: BitReaderReverse): number {
-  const maxNumBits = table.maxNumBits;
-  const peek = reader.readBits(maxNumBits);
-  if (peek < 0 || peek >= table.length) {
+  const maxNumBits = table.maxNumBits | 0;
+  const peek = reader.readBits(maxNumBits) >>> 0;
+  if (peek >= table.length) {
     throw new ZstdError('Huffman invalid code', 'corruption_detected');
   }
   const bits = table.numBits[peek]!;
   if (bits === 0) {
     throw new ZstdError('Huffman invalid code', 'corruption_detected');
   }
-  const unread = maxNumBits - bits;
+  const unread = (maxNumBits - bits) | 0;
   if (unread > 0) {
     reader.unreadBits(unread);
   }

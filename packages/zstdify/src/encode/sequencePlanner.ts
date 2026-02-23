@@ -214,47 +214,45 @@ function findBestMatchAt(parse: ParseState, pos: number, repOffsets: [number, nu
   return best;
 }
 
+/** Mutates repOffsets in place to avoid allocations in the match loop. */
 function applyRepOffsetUpdate(
   repOffsets: [number, number, number],
   offsetValue: number,
   literalsLength: number,
-): [number, number, number] {
-  const next: [number, number, number] = [repOffsets[0], repOffsets[1], repOffsets[2]];
+): void {
   const ll0 = literalsLength === 0;
   const isNonRepeat = offsetValue > 3 || (offsetValue === 3 && ll0);
   if (isNonRepeat) {
-    const actualOffset = offsetValue === 3 ? next[0] - 1 : offsetValue - 3;
-    next[2] = next[1];
-    next[1] = next[0];
-    next[0] = actualOffset;
-    return next;
+    const actualOffset = offsetValue === 3 ? repOffsets[0] - 1 : offsetValue - 3;
+    repOffsets[2] = repOffsets[1];
+    repOffsets[1] = repOffsets[0];
+    repOffsets[0] = actualOffset;
+    return;
   }
   let repeatIndex: 0 | 1 | 2;
   if (ll0) repeatIndex = offsetValue === 1 ? 1 : 2;
   else repeatIndex = (offsetValue - 1) as 0 | 1 | 2;
   if (repeatIndex === 1) {
-    next[1] = next[0];
-    next[0] = repOffsets[1];
+    const r1 = repOffsets[1];
+    repOffsets[1] = repOffsets[0];
+    repOffsets[0] = r1;
   } else if (repeatIndex === 2) {
-    next[2] = next[1];
-    next[1] = next[0];
-    next[0] = repOffsets[2];
+    const r2 = repOffsets[2];
+    repOffsets[2] = repOffsets[1];
+    repOffsets[1] = repOffsets[0];
+    repOffsets[0] = r2;
   }
-  return next;
 }
 
+/** Returns offsetValue and updates repOffsets in place. */
 function toOffsetValue(
   offset: number,
   literalsLength: number,
   repOffsets: [number, number, number],
-): { offsetValue: number; nextRepOffsets: [number, number, number] } {
-  // Keep conservative non-repeat offset encoding for interoperability.
-  // Repeat-offset modeling is still used for scoring/search decisions.
-  const offsetValue = offset + 3;
-  return {
-    offsetValue,
-    nextRepOffsets: applyRepOffsetUpdate(repOffsets, offsetValue, literalsLength),
-  };
+): number {
+  const offsetValue = (offset + 3) | 0;
+  applyRepOffsetUpdate(repOffsets, offsetValue, literalsLength);
+  return offsetValue;
 }
 
 function copyLiterals(dst: Uint8Array, dstOffset: number, data: Uint8Array, srcStart: number, srcEnd: number): number {
@@ -311,7 +309,7 @@ const lazyMatchScratch: MatchCandidate = { pos: 0, offset: 0, length: 0, score: 
 export function planSequences(input: Uint8Array, options: SequencePlannerOptions): GreedyEncodeResult {
   if (input.length < MIN_MATCH) {
     return {
-      literals: input.slice(),
+      literals: input.length > 0 ? input.subarray(0, input.length) : input,
       sequences: [],
       trailingLiterals: input.length,
       finalRepOffsets: options.repOffsets ?? [1, 4, 8],
@@ -333,7 +331,7 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
   const parse: ParseState = {
     input: combined,
     chainPrev: buildChainPrev(combined, historyLength, options.plannerState),
-    repOffsets: options.repOffsets ? [options.repOffsets[0], options.repOffsets[1], options.repOffsets[2]] : [1, 4, 8],
+    repOffsets: options.repOffsets ?? [1, 4, 8],
     options: {
       chainLimit: Math.max(1, options.chainLimit),
       repScoreBonus: options.repScoreBonus ?? [48, 24, 12],
@@ -379,13 +377,12 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
     const matchPos = best.pos;
     const literalsLength = matchPos - anchor;
     literalOut = copyLiterals(literals, literalOut, combined, anchor, matchPos);
-    const { offsetValue, nextRepOffsets } = toOffsetValue(best.offset, literalsLength, parse.repOffsets);
+    const offsetValue = toOffsetValue(best.offset, literalsLength, parse.repOffsets);
     sequences.push({
       literalsLength,
       offset: offsetValue,
       matchLength: best.length,
     });
-    parse.repOffsets = nextRepOffsets;
 
     anchor = matchPos + best.length;
     pos = anchor;
@@ -400,6 +397,6 @@ export function planSequences(input: Uint8Array, options: SequencePlannerOptions
     literals: literalsOut,
     sequences,
     trailingLiterals,
-    finalRepOffsets: [parse.repOffsets[0], parse.repOffsets[1], parse.repOffsets[2]],
+    finalRepOffsets: parse.repOffsets,
   };
 }

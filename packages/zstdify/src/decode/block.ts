@@ -19,9 +19,9 @@ function readU24LE(data: Uint8Array, offset: number): number {
   if (offset + 3 > data.length) {
     throw new RangeError(`readU24LE: offset ${offset} + 3 exceeds length ${data.length}`);
   }
-  const a = data[offset] ?? 0;
-  const b = data[offset + 1] ?? 0;
-  const c = data[offset + 2] ?? 0;
+  const a = data[offset]!;
+  const b = data[offset + 1]!;
+  const c = data[offset + 2]!;
   return a | (b << 8) | (c << 16);
 }
 

@@ -48,7 +48,7 @@ export class BitReader {
     let bitsLeft = n;
 
     while (bitsLeft > 0) {
-      const byte = this.data[this.byteOffset] ?? 0;
+      const byte = this.data[this.byteOffset]!;
       const bitsInByte = 8 - this.bitOffset;
       const take = bitsLeft < bitsInByte ? bitsLeft : bitsInByte;
       const mask = (1 << take) - 1;

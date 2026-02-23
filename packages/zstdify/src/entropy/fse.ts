@@ -54,7 +54,7 @@ export function buildFSEDecodeTable(normalizedCounter: ArrayLike<number>, tableL
   let highThreshold = tableSize - 1;
 
   for (let s = 0; s <= maxSymbolValue; s++) {
-    const n = normalizedCounter[s] ?? 0;
+    const n = normalizedCounter[s]!;
     if (n === -1) {
       tableSymbol[highThreshold] = s;
       highThreshold--;
@@ -69,7 +69,7 @@ export function buildFSEDecodeTable(normalizedCounter: ArrayLike<number>, tableL
   let position = 0;
 
   for (let s = 0; s <= maxSymbolValue; s++) {
-    const n = normalizedCounter[s] ?? 0;
+    const n = normalizedCounter[s]!;
     if (n <= 0) continue;
     for (let i = 0; i < n; i++) {
       tableSymbol[position] = s;
@@ -87,8 +87,8 @@ export function buildFSEDecodeTable(normalizedCounter: ArrayLike<number>, tableL
     const nextState = symbolNext[symbol]!;
     symbolNext[symbol] = nextState + 1;
 
-    const nbBits = tableLog - 31 + Math.clz32(nextState);
-    const baseline = (nextState << nbBits) - tableSize;
+    const nbBits = (tableLog - 31 + Math.clz32(nextState)) | 0;
+    const baseline = ((nextState << nbBits) - tableSize) | 0;
     symbolByState[u] = symbol;
     numBitsByState[u] = nbBits;
     baselineByState[u] = baseline;
@@ -107,15 +107,12 @@ export function buildFSEDecodeTable(normalizedCounter: ArrayLike<number>, tableL
  * Decode one FSE symbol. Updates state in place.
  */
 export function decodeFSESymbol(table: FSEDecodeTable, reader: BitReaderReverse, state: { value: number }): number {
-  const stateValue = state.value;
-  if (stateValue < 0 || stateValue >= table.length) {
-    throw new ZstdError('FSE invalid state', 'corruption_detected');
-  }
+  const stateValue = state.value | 0;
   const symbol = table.symbol[stateValue]!;
   const nbBits = table.numBits[stateValue]!;
   const baseline = table.baseline[stateValue]!;
   const bits = nbBits > 0 ? reader.readBits(nbBits) : 0;
-  state.value = baseline + bits;
+  state.value = (baseline + bits) | 0;
   return symbol;
 }
 
@@ -288,7 +285,7 @@ export function normalizeCountsForTable(
   let total = 0;
   let nonZero = 0;
   for (let s = 0; s < counts.length; s++) {
-    const c = counts[s] ?? 0;
+    const c = counts[s]!;
     if (c > 0) {
       total += c;
       nonZero++;
@@ -304,7 +301,7 @@ export function normalizeCountsForTable(
   const remainders = new Float64Array(counts.length);
   let assigned = 0;
   for (let s = 0; s < counts.length; s++) {
-    const c = counts[s] ?? 0;
+    const c = counts[s]!;
     if (c <= 0) continue;
     const scaled = (c * tableSize) / total;
     let value = (scaled | 0);
@@ -327,7 +324,7 @@ export function normalizeCountsForTable(
     if (bestSymbol < 0) {
       throw new ZstdError('FSE normalize: failed to reduce distribution', 'parameter_unsupported');
     }
-    normalizedCounter[bestSymbol]--;
+    normalizedCounter[bestSymbol] = normalizedCounter[bestSymbol]! - 1;
     assigned--;
   }
 
@@ -348,7 +345,7 @@ export function normalizeCountsForTable(
     if (bestSymbol < 0) {
       throw new ZstdError('FSE normalize: failed to complete distribution', 'parameter_unsupported');
     }
-    normalizedCounter[bestSymbol]++;
+    normalizedCounter[bestSymbol] = normalizedCounter[bestSymbol]! + 1;
     assigned++;
   }
 
@@ -392,7 +389,7 @@ export function writeNCount(
   while (symbol < alphabetSize && remaining > 1) {
     if (previousIs0) {
       let start = symbol;
-      while (symbol < alphabetSize && (normalizedCounter[symbol] ?? 0) === 0) symbol++;
+      while (symbol < alphabetSize && (normalizedCounter[symbol]!) === 0) symbol++;
       if (symbol === alphabetSize) break;
       while (symbol >= start + 24) {
         start += 24;
@@ -411,7 +408,7 @@ export function writeNCount(
       }
     }
 
-    let count = normalizedCounter[symbol] ?? 0;
+    let count = normalizedCounter[symbol]!;
     symbol++;
     const max = 2 * threshold - 1 - remaining;
     remaining -= count < 0 ? -count : count;

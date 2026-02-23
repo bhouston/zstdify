@@ -71,7 +71,7 @@ function hashBytes(bytes: Uint8Array): number {
   // FNV-1a 32-bit
   let hash = 0x811c9dc5;
   for (let i = 0; i < bytes.length; i++) {
-    hash ^= bytes[i] ?? 0;
+    hash ^= bytes[i]!;
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash >>> 0;
@@ -128,7 +128,7 @@ function normalizeOptions(sampleCount: number, options?: GenerateDictionaryOptio
 function toHex(bytes: Uint8Array): string {
   let out = '';
   for (let i = 0; i < bytes.length; i++) {
-    out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+    out += bytes[i]!.toString(16).padStart(2, '0');
   }
   return out;
 }

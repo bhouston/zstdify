@@ -64,7 +64,7 @@ export function readWeightsFSE(
   }
 
   const stream = header.subarray(streamStart, streamStart + streamLength);
-  const lastByte = stream[stream.length - 1] ?? 0;
+  const lastByte = stream[stream.length - 1]!;
   if (lastByte === 0) {
     throw new ZstdError('FSE-compressed weights: invalid end marker', 'corruption_detected');
   }
@@ -92,35 +92,23 @@ export function readWeightsFSE(
   const state2 = { value: readBitsZeroExtended(tableLog) };
 
   while (weightIdx < 255) {
-    if (state1.value < 0 || state1.value >= table.length) {
-      throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
-    }
     const sym1 = table.symbol[state1.value]!;
     const bits1 = table.numBits[state1.value]!;
     const baseline1 = table.baseline[state1.value]!;
     weights[weightIdx++] = sym1;
     state1.value = baseline1 + readBitsZeroExtended(bits1);
     if (bitOffset < 0) {
-      if (state2.value < 0 || state2.value >= table.length) {
-        throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
-      }
       weights[weightIdx++] = table.symbol[state2.value]!;
       break;
     }
     if (weightIdx >= 255) break;
 
-    if (state2.value < 0 || state2.value >= table.length) {
-      throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
-    }
     const sym2 = table.symbol[state2.value]!;
     const bits2 = table.numBits[state2.value]!;
     const baseline2 = table.baseline[state2.value]!;
     weights[weightIdx++] = sym2;
     state2.value = baseline2 + readBitsZeroExtended(bits2);
     if (bitOffset < 0) {
-      if (state1.value < 0 || state1.value >= table.length) {
-        throw new ZstdError('FSE-compressed weights: invalid state', 'corruption_detected');
-      }
       weights[weightIdx++] = table.symbol[state1.value]!;
       break;
     }

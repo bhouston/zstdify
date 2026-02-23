@@ -7,9 +7,12 @@ import { resolveDictionaryContextForCompression } from './dictionary/compressorD
 import { writeRawBlock, writeRLEBlock } from './encode/blockWriter.js';
 import {
   buildCompressedBlockPayload,
+  type CompressScratch,
+  LITERALS_SECTION_BUFFER_SIZE,
   type SequenceEntropyContext,
   writeCompressedBlock,
 } from './encode/compressedBlock.js';
+import { ReverseBitWriter } from './bitstream/reverseBitWriter.js';
 import { writeFrameHeader } from './encode/frameWriter.js';
 import { buildGreedySequences } from './encode/greedySequences.js';
 import { createSequencePlannerState } from './encode/sequencePlanner.js';
@@ -90,6 +93,13 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
   let repOffsets: [number, number, number] = [1, 4, 8];
   const sequenceEntropyContext: SequenceEntropyContext = { prevTables: null };
   const sequencePlannerState = createSequencePlannerState();
+  const compressScratch: CompressScratch | null =
+    strategy !== null
+      ? {
+          reverseBitWriter: new ReverseBitWriter(),
+          literalsSectionBuffer: new Uint8Array(LITERALS_SECTION_BUFFER_SIZE),
+        }
+      : null;
   while (offset < input.length || blockIndex < blockCount) {
     const size = Math.min(BLOCK_MAX, input.length - offset);
     const last = blockIndex === blockCount - 1;
@@ -98,7 +108,12 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
       if (strategy) {
         const plan = buildGreedySequences(block, { strategy, history, repOffsets, plannerState: sequencePlannerState });
         if (plan.sequences.length > 0) {
-          const payload = buildCompressedBlockPayload(plan.literals, plan.sequences, sequenceEntropyContext);
+          const payload = buildCompressedBlockPayload(
+            plan.literals,
+            plan.sequences,
+            sequenceEntropyContext,
+            compressScratch ?? undefined,
+          );
           if (payload) {
             const compressed = writeCompressedBlock(payload, last);
             if (compressed.length < 3 + size) {
@@ -112,10 +127,10 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
           }
         }
       }
-      const first = input[offset] ?? 0;
+      const first = input[offset]!;
       let isRLE = true;
       for (let i = offset + 1; i < offset + size; i++) {
-        if ((input[i] ?? 0) !== first) {
+        if (input[i]! !== first) {
           isRLE = false;
           break;
         }

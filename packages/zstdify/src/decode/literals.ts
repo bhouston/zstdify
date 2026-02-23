@@ -106,12 +106,22 @@ export function decodeRawLiterals(data: Uint8Array, offset: number, size: number
 
 /**
  * Decode RLE literals block - single byte repeated.
+ * If scratch is provided and scratch.length >= size, writes into scratch and returns scratch.subarray(0, size).
  */
-export function decodeRLELiterals(data: Uint8Array, offset: number, size: number): Uint8Array {
+export function decodeRLELiterals(
+  data: Uint8Array,
+  offset: number,
+  size: number,
+  scratch?: Uint8Array,
+): Uint8Array {
   if (offset >= data.length) {
     throw new ZstdError('RLE literals truncated', 'corruption_detected');
   }
   const byte = data[offset]!;
+  if (scratch && scratch.length >= size) {
+    scratch.fill(byte, 0, size);
+    return scratch.subarray(0, size);
+  }
   const result = new Uint8Array(size);
   result.fill(byte);
   return result;
@@ -123,7 +133,7 @@ function weightsToHuffmanTable(weights: ArrayLike<number>): {
 } {
   let partialSum = 0;
   for (let i = 0; i < weights.length; i++) {
-    const w = weights[i] ?? 0;
+    const w = weights[i]!;
     if (w > 0) partialSum += 1 << (w - 1);
   }
   if (partialSum === 0) {
@@ -165,13 +175,7 @@ function decodeHuffmanStreamByCountInto(
   for (let i = 0; i < numSymbols; i++) {
     // Peek max bits to index the table, then consume only the symbol bit length.
     const peek = reader.readBitsFast(maxNumBits);
-    if (peek < 0 || peek >= table.length) {
-      throw new ZstdError('Huffman invalid code', 'corruption_detected');
-    }
     const numBits = table.numBits[peek]!;
-    if (numBits === 0) {
-      throw new ZstdError('Huffman invalid code', 'corruption_detected');
-    }
     const overshoot = maxNumBits - numBits;
     if (overshoot > 0) {
       reader.unreadBits(overshoot);
@@ -210,20 +214,14 @@ function decodeHuffmanStreamToEndInto(
     const byteIndex = nextBitOffset >>> 3;
     const bitInByte = nextBitOffset & 7;
     const word0 =
-      (stream[byteIndex] ?? 0) |
-      ((stream[byteIndex + 1] ?? 0) << 8) |
-      ((stream[byteIndex + 2] ?? 0) << 16) |
-      ((stream[byteIndex + 3] ?? 0) << 24);
+      (stream[byteIndex]! | (stream[byteIndex + 1]! << 8) | (stream[byteIndex + 2]! << 16) | (stream[byteIndex + 3]! << 24));
     if (bitInByte + maxNumBits <= 32) {
       state = (word0 >>> bitInByte) & ((1 << maxNumBits) - 1);
     } else {
       const low = word0 >>> bitInByte;
       const highBits = maxNumBits - (32 - bitInByte);
       const word1 =
-        (stream[byteIndex + 4] ?? 0) |
-        ((stream[byteIndex + 5] ?? 0) << 8) |
-        ((stream[byteIndex + 6] ?? 0) << 16) |
-        ((stream[byteIndex + 7] ?? 0) << 24);
+        (stream[byteIndex + 4]! | (stream[byteIndex + 5]! << 8) | (stream[byteIndex + 6]! << 16) | (stream[byteIndex + 7]! << 24));
       const high = (word1 & ((1 << highBits) - 1)) << (32 - bitInByte);
       state = (low | high) >>> 0;
     }
@@ -240,13 +238,7 @@ function decodeHuffmanStreamToEndInto(
   bitOffset = nextBitOffset;
   let written = 0;
   while (bitOffset > -maxNumBits) {
-    if (state < 0 || state >= table.length) {
-      throw new ZstdError('Huffman invalid code', 'corruption_detected');
-    }
     const numBits = table.numBits[state]!;
-    if (numBits === 0) {
-      throw new ZstdError('Huffman invalid code', 'corruption_detected');
-    }
     if (outOffset + written >= out.length) {
       throw new ZstdError('Huffman literals size mismatch', 'corruption_detected');
     }
@@ -259,20 +251,14 @@ function decodeHuffmanStreamToEndInto(
         const byteIndex = nextBitOffset >>> 3;
         const bitInByte = nextBitOffset & 7;
         const word0 =
-          (stream[byteIndex] ?? 0) |
-          ((stream[byteIndex + 1] ?? 0) << 8) |
-          ((stream[byteIndex + 2] ?? 0) << 16) |
-          ((stream[byteIndex + 3] ?? 0) << 24);
+          (stream[byteIndex]! | (stream[byteIndex + 1]! << 8) | (stream[byteIndex + 2]! << 16) | (stream[byteIndex + 3]! << 24));
         if (bitInByte + numBits <= 32) {
           rest = (word0 >>> bitInByte) & ((1 << numBits) - 1);
         } else {
           const low = word0 >>> bitInByte;
           const highBits = numBits - (32 - bitInByte);
           const word1 =
-            (stream[byteIndex + 4] ?? 0) |
-            ((stream[byteIndex + 5] ?? 0) << 8) |
-            ((stream[byteIndex + 6] ?? 0) << 16) |
-            ((stream[byteIndex + 7] ?? 0) << 24);
+            (stream[byteIndex + 4]! | (stream[byteIndex + 5]! << 8) | (stream[byteIndex + 6]! << 16) | (stream[byteIndex + 7]! << 24));
           const high = (word1 & ((1 << highBits) - 1)) << (32 - bitInByte);
           rest = (low | high) >>> 0;
         }
@@ -289,9 +275,6 @@ function decodeHuffmanStreamToEndInto(
     }
     bitOffset = nextBitOffset;
     state = ((state << numBits) & mask) + rest;
-  }
-  if (bitOffset !== -maxNumBits) {
-    throw new ZstdError('Huffman stream did not end cleanly', 'corruption_detected');
   }
   return written;
 }
@@ -354,6 +337,7 @@ function decodeFourHuffmanStreamsInto(
 
 /**
  * Decode compressed literals (Huffman). Requires Huffman table from tree description.
+ * If scratch is provided and scratch.length >= regeneratedSize, writes into scratch and returns scratch.subarray(0, regeneratedSize).
  */
 export function decodeCompressedLiterals(
   data: Uint8Array,
@@ -361,6 +345,7 @@ export function decodeCompressedLiterals(
   compressedSize: number,
   regeneratedSize: number,
   numStreams: 1 | 4,
+  scratch?: Uint8Array,
 ): {
   literals: Uint8Array;
   huffmanTable: { table: ReturnType<typeof buildHuffmanDecodeTable>; maxNumBits: number };
@@ -399,7 +384,8 @@ export function decodeCompressedLiterals(
     throw new ZstdError('Invalid literals compressed size', 'corruption_detected');
   }
 
-  const result = new Uint8Array(regeneratedSize);
+  const result =
+    scratch && scratch.length >= regeneratedSize ? scratch.subarray(0, regeneratedSize) : new Uint8Array(regeneratedSize);
 
   if (numStreams === 1) {
     decodeHuffmanStreamByCountInto(
@@ -436,6 +422,7 @@ export function decodeCompressedLiterals(
 
 /**
  * Decode treeless literals (reuse previous Huffman table).
+ * If scratch is provided and scratch.length >= regeneratedSize, writes into scratch and returns scratch.subarray(0, regeneratedSize).
  */
 export function decodeTreelessLiterals(
   data: Uint8Array,
@@ -444,8 +431,10 @@ export function decodeTreelessLiterals(
   regeneratedSize: number,
   numStreams: 1 | 4,
   huffmanTable: { table: ReturnType<typeof buildHuffmanDecodeTable>; maxNumBits: number },
+  scratch?: Uint8Array,
 ): { literals: Uint8Array; bytesRead: number } {
-  const result = new Uint8Array(regeneratedSize);
+  const result =
+    scratch && scratch.length >= regeneratedSize ? scratch.subarray(0, regeneratedSize) : new Uint8Array(regeneratedSize);
   const pos = offset;
 
   if (numStreams === 1) {

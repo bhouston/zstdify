@@ -130,7 +130,7 @@ export default class ProcessDuplex extends Duplex {
       // Wait for the process to fully exit before calling callback
       const onClose = () => {
         clearTimeout(forceKillTimeout);
-        callback(error);
+        cb(error);
       };
 
       // Set up close listener

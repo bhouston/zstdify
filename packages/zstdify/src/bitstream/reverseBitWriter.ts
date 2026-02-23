@@ -59,14 +59,14 @@ export function encodeReverseBitstream(
 ): Uint8Array {
   let bitLength = 1; // End marker bit.
   for (let i = 0; i < bitCounts.length; i++) {
-    const n = bitCounts[i] ?? 0;
+    const n = bitCounts[i]!;
     if (n > 0) bitLength += n;
   }
 
   writer.reset(bitLength);
   for (let i = bitCounts.length - 1; i >= 0; i--) {
-    const n = bitCounts[i] ?? 0;
-    if (n > 0) writer.writeBits(n, bitValues[i] ?? 0);
+    const n = bitCounts[i]!;
+    if (n > 0) writer.writeBits(n, bitValues[i]!);
   }
   writer.writeBits(1, 1);
   return writer.finish();

@@ -81,7 +81,7 @@ export class BitReaderReverse {
       }
       const byteIndex = absoluteBit >>> 3;
       const bitInByte = absoluteBit & 7;
-      const bit = ((this.data[byteIndex] ?? 0) >>> bitInByte) & 1;
+      const bit = ((this.data[byteIndex]! >>> bitInByte) & 1);
       value |= bit << i;
     }
     return value;
@@ -151,7 +151,7 @@ export class BitReaderReverse {
       throw new RangeError('BitReaderReverse: empty stream');
     }
     const lastByteIndex = (this.endBit >>> 3) - 1;
-    const lastByte = this.data[lastByteIndex] ?? 0;
+    const lastByte = this.data[lastByteIndex]!;
     if (lastByte === 0) {
       throw new RangeError('BitReaderReverse: invalid end marker');
     }

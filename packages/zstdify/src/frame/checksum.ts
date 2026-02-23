@@ -80,7 +80,7 @@ export function xxh64(data: Uint8Array, seed = 0n): bigint {
   }
 
   while (offset < len) {
-    acc ^= (BigInt(data[offset] ?? 0) * PRIME64_5) & MASK64;
+    acc ^= (BigInt(data[offset]!) * PRIME64_5) & MASK64;
     acc = (rotl64(acc, 11) * PRIME64_1) & MASK64;
     offset++;
   }

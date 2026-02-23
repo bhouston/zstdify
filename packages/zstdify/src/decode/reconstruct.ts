@@ -23,9 +23,7 @@ export interface HistoryWindow {
   writePos: number;
 }
 
-const FAST_LITERAL_COPY_LOOP_THRESHOLD = 8;
 const FAST_SMALL_OFFSET_LOOP_THRESHOLD = 16;
-const FAST_HISTORY_COPY_LOOP_THRESHOLD = 16;
 
 function isHistoryWindow(value: HistoryWindow | Uint8Array): value is HistoryWindow {
   return (
@@ -49,10 +47,33 @@ export function createHistoryWindow(windowSize: number, initial?: Uint8Array): H
   return history;
 }
 
-/** Internal: reuse bag for decoder context. */
+/** Max literals size per block (zstd limit). Used for scratch buffer sizing. */
+export const DECODE_LITERALS_SCRATCH_SIZE = 128 * 1024;
+
+/** Initial and minimum size for reusable frame output buffer when content size unknown. */
+export const DECODE_OUTPUT_BUFFER_INITIAL = 64 * 1024;
+
+/** Internal: reuse bag for decoder context. Buffers may be grown by the decoder. */
 export interface DecoderReuseBag {
   _history?: HistoryWindow;
   _sequences?: PackedSequences;
+  /** Reusable buffer for literals decode (raw/RLE/compressed/treeless). Length >= DECODE_LITERALS_SCRATCH_SIZE. */
+  _literalsScratch?: Uint8Array;
+  /** Reusable frame output buffer when content size unknown. Grown as needed; decoder returns a copy. */
+  _outputBuffer?: Uint8Array;
+}
+
+/** Get or create literals scratch buffer from reuse bag for decode-into APIs. */
+export function getOrCreateLiteralsScratch(reuse: DecoderReuseBag | undefined): Uint8Array | undefined {
+  const existing = reuse?._literalsScratch;
+  if (existing && existing.length >= DECODE_LITERALS_SCRATCH_SIZE) {
+    return existing;
+  }
+  if (reuse) {
+    reuse._literalsScratch = new Uint8Array(DECODE_LITERALS_SCRATCH_SIZE);
+    return reuse._literalsScratch;
+  }
+  return;
 }
 
 function createPackedSequences(capacity: number): PackedSequences {
@@ -101,9 +122,9 @@ export function packedSequencesToArray(sequences: PackedSequences): Sequence[] {
   const out: Sequence[] = new Array(sequences.length);
   for (let i = 0; i < sequences.length; i++) {
     out[i] = {
-      literalsLength: sequences.literalsLength[i] ?? 0,
-      offset: sequences.offset[i] ?? 0,
-      matchLength: sequences.matchLength[i] ?? 0,
+      literalsLength: sequences.literalsLength[i]!,
+      offset: sequences.offset[i]!,
+      matchLength: sequences.matchLength[i]!,
     };
   }
   return out;
@@ -156,8 +177,6 @@ export function appendToHistoryWindow(history: HistoryWindow, chunk: Uint8Array)
   history.length = Math.min(cap, history.length + chunk.length);
 }
 
-const APPEND_RANGE_LOOP_THRESHOLD = 16;
-
 export function appendRangeToHistoryWindow(
   history: HistoryWindow,
   source: Uint8Array,
@@ -180,17 +199,9 @@ export function appendRangeToHistoryWindow(
   }
   const firstLen = Math.min(length, cap - history.writePos);
   const remaining = length - firstLen;
-  if (length <= APPEND_RANGE_LOOP_THRESHOLD) {
-    let wp = history.writePos;
-    for (let i = 0; i < length; i++) {
-      history.buffer[wp] = source[start + i]!;
-      wp = wp + 1 === cap ? 0 : wp + 1;
-    }
-  } else {
-    history.buffer.set(source.subarray(start, start + firstLen), history.writePos);
-    if (remaining > 0) {
-      history.buffer.set(source.subarray(start + firstLen, start + firstLen + remaining), 0);
-    }
+  history.buffer.set(source.subarray(start, start + firstLen), history.writePos);
+  if (remaining > 0) {
+    history.buffer.set(source.subarray(start + firstLen, start + firstLen + remaining), 0);
   }
   history.writePos = (history.writePos + length) % cap;
   history.length = Math.min(cap, history.length + length);
@@ -235,8 +246,6 @@ export function executeSequencesInto(
   const historyBuffer = history.buffer;
   let outPos = targetOffset;
   let litPos = 0;
-  const LIT_COPY_LOOP_THRESHOLD = 16;
-  const HISTORY_COPY_LOOP_THRESHOLD = 16;
   const seqCount = sequences.length;
   const literalsLengthBySeq = sequences.literalsLength;
   const offsetBySeq = sequences.offset;
@@ -250,13 +259,7 @@ export function executeSequencesInto(
       if (litEnd > literals.length) {
         throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
       }
-      if (seqLiteralsLength <= LIT_COPY_LOOP_THRESHOLD) {
-        for (let i = 0; i < seqLiteralsLength; i++) {
-          target[outPos + i] = literals[litPos + i]!;
-        }
-      } else {
-        target.set(literals.subarray(litPos, litEnd), outPos);
-      }
+      target.set(literals.subarray(litPos, litEnd), outPos);
       outPos += seqLiteralsLength;
       litPos = litEnd;
       if (updateHistory) {
@@ -311,20 +314,11 @@ export function executeSequencesInto(
       const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
       const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
       const historyOutStart = outPos;
-      if (historyCopyLen <= HISTORY_COPY_LOOP_THRESHOLD) {
-        let phys = physicalStart;
-        for (let i = 0; i < historyCopyLen; i++) {
-          target[outPos + i] = historyBuffer[phys]!;
-          phys = phys + 1 === historyCap ? 0 : phys + 1;
-        }
-        outPos += historyCopyLen;
-      } else {
-        target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
-        outPos += firstHistoryChunk;
-        if (remainingHistoryChunk > 0) {
-          target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
-          outPos += remainingHistoryChunk;
-        }
+      target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
+      outPos += firstHistoryChunk;
+      if (remainingHistoryChunk > 0) {
+        target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
+        outPos += remainingHistoryChunk;
       }
       if (updateHistory) {
         appendRangeToHistoryWindow(history, target, historyOutStart, historyCopyLen);
@@ -372,13 +366,7 @@ export function executeSequencesInto(
   if (litPos < literals.length) {
     const tailOutStart = outPos;
     const remaining = literals.length - litPos;
-    if (remaining <= LIT_COPY_LOOP_THRESHOLD) {
-      for (let i = 0; i < remaining; i++) {
-        target[outPos + i] = literals[litPos + i]!;
-      }
-    } else {
-      target.set(literals.subarray(litPos), outPos);
-    }
+    target.set(literals.subarray(litPos), outPos);
     outPos += remaining;
     if (updateHistory) {
       appendRangeToHistoryWindow(history, target, tailOutStart, remaining);
@@ -432,13 +420,7 @@ export function executeSequencesIntoFast(
       if (litEnd > literals.length) {
         throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
       }
-      if (seqLiteralsLength <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
-        for (let i = 0; i < seqLiteralsLength; i++) {
-          target[outPos + i] = literals[litPos + i]!;
-        }
-      } else {
-        target.set(literals.subarray(litPos, litEnd), outPos);
-      }
+      target.set(literals.subarray(litPos, litEnd), outPos);
       outPos += seqLiteralsLength;
       litPos = litEnd;
     }
@@ -515,20 +497,11 @@ export function executeSequencesIntoFast(
         }
         const firstHistoryChunk = Math.min(historyCopyLen, historyCap - physicalStart);
         const remainingHistoryChunk = historyCopyLen - firstHistoryChunk;
-        if (historyCopyLen <= FAST_HISTORY_COPY_LOOP_THRESHOLD) {
-          let phys = physicalStart;
-          for (let i = 0; i < historyCopyLen; i++) {
-            target[outPos + i] = historyBuffer[phys]!;
-            phys = phys + 1 === historyCap ? 0 : phys + 1;
-          }
-          outPos += historyCopyLen;
-        } else {
-          target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
-          outPos += firstHistoryChunk;
-          if (remainingHistoryChunk > 0) {
-            target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
-            outPos += remainingHistoryChunk;
-          }
+        target.set(historyBuffer.subarray(physicalStart, physicalStart + firstHistoryChunk), outPos);
+        outPos += firstHistoryChunk;
+        if (remainingHistoryChunk > 0) {
+          target.set(historyBuffer.subarray(0, remainingHistoryChunk), outPos);
+          outPos += remainingHistoryChunk;
         }
 
         const matchRemaining = remainingMatch - historyCopyLen;
@@ -573,15 +546,8 @@ export function executeSequencesIntoFast(
 
   if (litPos < literals.length) {
     const remaining = literals.length - litPos;
-    if (remaining <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
-      for (let i = 0; i < remaining; i++) {
-        target[outPos + i] = literals[litPos + i]!;
-      }
-      outPos += remaining;
-    } else {
-      target.set(literals.subarray(litPos), outPos);
-      outPos += remaining;
-    }
+    target.set(literals.subarray(litPos), outPos);
+    outPos += remaining;
   }
 
   if (updateHistory && outPos > targetOffset) {
@@ -622,13 +588,7 @@ function executeSequencesIntoFastNoHistory(
       if (litEnd > literals.length) {
         throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
       }
-      if (seqLiteralsLength <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
-        for (let i = 0; i < seqLiteralsLength; i++) {
-          target[outPos + i] = literals[litPos + i]!;
-        }
-      } else {
-        target.set(literals.subarray(litPos, litEnd), outPos);
-      }
+      target.set(literals.subarray(litPos, litEnd), outPos);
       outPos += seqLiteralsLength;
       litPos = litEnd;
     }
@@ -705,15 +665,8 @@ function executeSequencesIntoFastNoHistory(
 
   if (litPos < literals.length) {
     const remaining = literals.length - litPos;
-    if (remaining <= FAST_LITERAL_COPY_LOOP_THRESHOLD) {
-      for (let i = 0; i < remaining; i++) {
-        target[outPos + i] = literals[litPos + i]!;
-      }
-      outPos += remaining;
-    } else {
-      target.set(literals.subarray(litPos), outPos);
-      outPos += remaining;
-    }
+    target.set(literals.subarray(litPos), outPos);
+    outPos += remaining;
   }
 
   if (updateHistory && outPos > targetOffset) {
