@@ -210,17 +210,27 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
     throw err;
   }
 
+  let wrapper: PeekPassThrough | null = null;
+
   d.on('exit', (code: number, signal) => {
     debug('d exit', code, signal);
+    if (wrapper) {
+      wrapper.emit('exit', code, signal);
+    }
     if (code !== 0 && !terminate) {
       setImmediate(() => {
-        d.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
+        const error = new Error(`zstd exited non zero. code: ${code} signal: ${signal}`);
+        if (wrapper && !wrapper.destroyed) {
+          wrapper.destroy(error);
+        } else if (!d.destroyed) {
+          d.destroy(error);
+        }
       });
     }
     cleanup();
   });
 
-  const wrapper = new PeekPassThrough({ maxBuffer: 10 }, (data: Buffer, swap) => {
+  wrapper = new PeekPassThrough({ maxBuffer: 10 }, (data: Buffer, swap) => {
     if (isZst(data)) {
       swap(null, d);
     } else {
@@ -231,14 +241,11 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
     }
   });
 
-  // CRITICAL: Wrap _destroy to ensure ProcessDuplex is always destroyed
-  const originalDestroy = wrapper._destroy.bind(wrapper);
-  wrapper._destroy = (error: Error | null, cb: (err: Error | null) => void) => {
-    if (!d.destroyed) {
-      d.destroy();
+  d.once('error', (err: unknown) => {
+    if (wrapper && !wrapper.destroyed) {
+      wrapper.destroy(err instanceof Error ? err : new Error(String(err)));
     }
-    originalDestroy(error, cb);
-  };
+  });
 
   return wrapper;
 }
@@ -246,19 +253,39 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
 function DecompressBuffer(buffer: Buffer, d: Duplex): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const w = new BufferWritable({});
+    const stderrChunks: string[] = [];
+
+    const resolveOnce = (value: Buffer) => {
+      resolve(value);
+    };
+
+    const rejectOnce = (error: Error) => {
+      reject(error);
+    };
+
+    d.once('error', (err: unknown) => {
+      rejectOnce(err instanceof Error ? err : new Error(String(err)));
+    });
+
+    d.on('stderr', (chunk: unknown) => {
+      stderrChunks.push(String(chunk));
+    });
 
     d.once('close', () => {
       setImmediate(() => {
-        resolve(w.getBuffer() || Buffer.alloc(0));
+        const stderrOutput = stderrChunks.join('').trim();
+        if (stderrOutput.length > 0) {
+          rejectOnce(new Error(stderrOutput));
+        } else {
+          resolveOnce(w.getBuffer() || Buffer.alloc(0));
+        }
       });
     });
 
     pipeline(Readable.from(buffer), d, w)
-      .then(() => {
-        d.destroy();
-      })
+      .then(() => {})
       .catch((err: Error) => {
-        reject(err);
+        rejectOnce(err);
         d.destroy();
       });
   });
@@ -280,8 +307,51 @@ export function decompress(opts: ZSTDOpts = {}): Promise<Duplex> {
 }
 
 export async function decompressBuffer(buffer: Buffer, opts: ZSTDOpts = {}): Promise<Buffer> {
-  const d = await CreateDecompressStream(opts);
-  return DecompressBuffer(buffer, d);
+  let zo = opts.zstdOptions || [];
+  let path: string | null = null;
+  let cleanup: () => void = () => null;
+
+  if (opts.dictionary && 'path' in opts.dictionary) {
+    zo = [...zo, '-D', `${opts.dictionary.path}`];
+  } else if (Buffer.isBuffer(opts.dictionary)) {
+    ({ path, cleanup } = await getCachedDictionaryPath(opts.dictionary));
+    zo = [...zo, '-D', `${path}`];
+  }
+
+  return new Promise((resolve, reject) => {
+    const execOptions = {
+      ...(opts.spawnOptions as Record<string, unknown> | undefined),
+      encoding: 'buffer',
+    } as Record<string, unknown>;
+
+    debug(bin, ['-dc', ...zo], execOptions);
+    const child = execFile(
+      bin,
+      ['-dc', ...zo],
+      execOptions as never,
+      (error, stdout: string | Buffer, stderr: string | Buffer) => {
+        cleanup();
+        if (error) {
+          const code = typeof error.code === 'number' ? error.code : null;
+          const signal = error.signal ?? null;
+          const stderrMessage = (Buffer.isBuffer(stderr) ? stderr.toString() : String(stderr || '')).trim();
+          const message = stderrMessage
+            ? `zstd exited non zero. code: ${code} signal: ${signal}: ${stderrMessage}`
+            : `zstd exited non zero. code: ${code} signal: ${signal}`;
+          reject(new Error(message));
+          return;
+        }
+        resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout));
+      },
+    );
+
+    if (!child.stdin) {
+      cleanup();
+      reject(new Error('zstd stdin is not available'));
+      return;
+    }
+    child.stdin.end(buffer);
+  });
 }
 
 export async function createDictionary(opts: CreateDictionaryOpts): Promise<Buffer> {

@@ -12,6 +12,7 @@ export default class ProcessDuplex extends Duplex {
   #stderrDataHandler?: (chunk: Buffer) => void;
   #processExitHandler?: (code: number | null, signal: NodeJS.Signals | null) => void;
   #processErrorHandler?: (err: Error) => void;
+  #didEmitExit = false;
 
   constructor(command: string, args: string[], spawnOptions?: SpawnOptions, streamOptions?: DuplexOptions) {
     super(streamOptions);
@@ -58,6 +59,7 @@ export default class ProcessDuplex extends Duplex {
 
     // Handle process exit
     this.#processExitHandler = (code: number | null, signal: NodeJS.Signals | null) => {
+      this.#didEmitExit = true;
       this.emit('exit', code, signal);
     };
     this.#process.on('exit', this.#processExitHandler);
@@ -129,6 +131,10 @@ export default class ProcessDuplex extends Duplex {
 
       // Wait for the process to fully exit before calling callback
       const onClose = () => {
+        if (!this.#didEmitExit) {
+          this.#didEmitExit = true;
+          this.emit('exit', this.#process.exitCode, this.#process.signalCode);
+        }
         clearTimeout(forceKillTimeout);
         cb(error);
       };

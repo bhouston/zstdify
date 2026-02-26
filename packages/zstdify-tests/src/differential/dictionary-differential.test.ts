@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDictionary } from 'simple-zstd';
+import { decompressBuffer as simpleZstdDecompressBuffer } from 'simple-zstd';
 import { describe, expect, it } from 'vitest';
 import { compress, decompress, generateDictionary } from 'zstdify';
 import { requireZstdCli, zstdCompressWithDictionary, zstdDecompressWithDictionary } from '../helpers/zstdCli.js';
@@ -39,6 +40,19 @@ describe('differential dictionaries: zstd -> zstdify', () => {
       const payload = new TextEncoder().encode('alpha beta gamma');
       const encoded = await zstdCompressWithDictionary(payload, dictPath);
       expect(() => decompress(encoded)).toThrow();
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('simple-zstd baseline rejects dictionary-compressed frames without dictionary', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'zstdify-dict-diff-'));
+    try {
+      const dictPath = join(tempRoot, 'raw-content.dict');
+      writeFileSync(dictPath, 'alpha beta gamma delta');
+      const payload = new TextEncoder().encode('alpha beta gamma');
+      const encoded = await zstdCompressWithDictionary(payload, dictPath);
+      await expect(simpleZstdDecompressBuffer(Buffer.from(encoded))).rejects.toThrow();
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
