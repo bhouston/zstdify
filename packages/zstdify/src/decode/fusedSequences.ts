@@ -243,9 +243,9 @@ export function decodeAndExecuteSequencesInto(
 
       if (literalsLength > 0) {
         const litEnd = litPos + literalsLength;
-       //if (litEnd > literals.length) {
-         // throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
-        //}
+        if (litEnd > literals.length) {
+          throw new ZstdError('Literals overrun while executing sequence', 'corruption_detected');
+        }
         output.set(literals.subarray(litPos, litEnd), outPos);
         outPos += literalsLength;
         litPos = litEnd;
@@ -273,12 +273,12 @@ export function decodeAndExecuteSequencesInto(
       const produced = outPos - outputStart;
       const producedPlusHistory = produced + historyLength;
       const maxReachBack = producedPlusHistory < windowSize ? producedPlusHistory : windowSize;
-      /*if (offset <= 0 || offset > maxReachBack) {
+      if (offset <= 0 || offset > maxReachBack) {
         throw new ZstdError(
           `Invalid match offset: offset=${offset} maxReachBack=${maxReachBack} produced=${produced} history=${historyLength} window=${windowSize}`,
           'corruption_detected',
         );
-      }*/
+      }
 
       const historyBytesNeeded = offset > produced ? offset - produced : 0;
       if (matchLength > 0) {
@@ -304,14 +304,14 @@ export function decodeAndExecuteSequencesInto(
             }
           }
         } else {
-         /* if (historyCap === 0) {
+          if (historyCap === 0) {
             throw new ZstdError('Invalid history read', 'corruption_detected');
-          }*/
+          }
           const historyCopyLen = Math.min(historyBytesNeeded, matchLength);
           const historyStart = historyLength - historyBytesNeeded;
-          /*if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
+          if (historyStart < 0 || historyStart + historyCopyLen > historyLength) {
             throw new ZstdError('Invalid history read', 'corruption_detected');
-          }*/
+          }
           let physicalStart = historyOldestPos + historyStart;
           if (physicalStart >= historyCap) {
             physicalStart -= historyCap;
