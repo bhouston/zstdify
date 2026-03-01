@@ -9,6 +9,12 @@ describe('decodeSequences modes and extended counts', () => {
     expect(result.bytesRead).toBe(2);
   });
 
+  it('accepts a one-byte zero-sequences section', () => {
+    const result = decodeSequences(new Uint8Array([0x00]), 0, 1, null);
+    expect(result.sequences.length).toBe(0);
+    expect(result.bytesRead).toBe(1);
+  });
+
   it('parses 255 marker path and rejects truncated section afterwards', () => {
     const data = new Uint8Array([0xff, 0x00, 0x00]);
     expect(() => decodeSequences(data, 0, data.length, null)).toThrowError(/truncated/i);
@@ -27,6 +33,31 @@ describe('decodeSequences modes and extended counts', () => {
     ]);
     const result = decodeSequences(data, 0, data.length, null);
     expect(result.sequences.length).toBe(1);
+    expect(result.tables.llTable.length).toBe(1);
+    expect(result.tables.ofTable.length).toBe(1);
+    expect(result.tables.mlTable.length).toBe(1);
+    expect(result.metadata.llTableLog).toBe(0);
+    expect(result.metadata.ofTableLog).toBe(0);
+    expect(result.metadata.mlTableLog).toBe(0);
+  });
+
+  it('keeps RLE offset mode bit consumption at zero for VRoid regression block', () => {
+    const block = Buffer.from(
+      '08004198e00f0012f8ffffbf6030c30ff9da3abf777eebfcd679adf37be7b5ceeb9ddf3bafebbcd6f9bdf37ae7b5ceeb9ddf3aaf757eefbcd679bdce6f9ddf3bbf757eebbcd6f9bdf35ae7f5ceef9dd7755eebfcee07289314',
+      'hex',
+    );
+    const literalsLength = 1;
+    const seqOffset = 1 + literalsLength;
+    const result = decodeSequences(block, seqOffset, block.length - seqOffset, null);
+    const totalLiteralsLength = Array.from(result.sequences.literalsLength.subarray(0, result.sequences.length)).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+
+    expect(result.sequences.length).toBe(65);
+    expect(totalLiteralsLength).toBe(1);
+    expect(result.tables.ofTable.length).toBe(1);
+    expect(result.metadata.ofTableLog).toBe(0);
   });
 
   it('enters FSE mode and rejects malformed FSE table stream', () => {
