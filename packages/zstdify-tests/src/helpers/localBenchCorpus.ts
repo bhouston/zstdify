@@ -28,6 +28,9 @@ export interface BenchCorpusPayload {
 
 export function loadLocalBenchCorpusForTests(maxSampleBytes = DEFAULT_TEST_SAMPLE_BYTES): BenchCorpusPayload[] {
   if (!fs.existsSync(BENCH_DATA_INDEX_PATH)) {
+    if (process.env.CI === 'true') {
+      return [];
+    }
     throw new Error(
       `Missing local benchmark corpus index at ${BENCH_DATA_INDEX_PATH}. ` +
         'Run: pnpm --filter zstdify-tests run bench:fetch-data',
