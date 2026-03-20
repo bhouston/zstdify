@@ -36,8 +36,5 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Download benchmark data
-        run: pnpm --filter zstdify-tests run bench:fetch-data
-
       - name: Test
         run: pnpm test
