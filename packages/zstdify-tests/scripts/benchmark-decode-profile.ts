@@ -89,7 +89,6 @@ function main(): void {
       throw new Error('Profile payload selection failed');
     }
     const a = decompress(p.nodeCompressed, { validateChecksum: false, reuseContext: p.ctx });
-    // biome-ignore lint/style/noNonNullAssertion: safe
     checksum = (checksum + a[0]!) | 0;
     p.turns++;
     totalDecodedBytes += p.bytes;

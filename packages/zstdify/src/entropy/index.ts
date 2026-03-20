@@ -1,11 +1,7 @@
 export type { FSEDecodeTable } from './fse.js';
 export { buildFSEDecodeTable, decodeFSESymbol, readNCount } from './fse.js';
 export type { HuffmanDecodeTable } from './huffman.js';
-export {
-  buildHuffmanDecodeTable,
-  decodeHuffmanSymbol,
-  weightsToNumBits,
-} from './huffman.js';
+export { buildHuffmanDecodeTable, decodeHuffmanSymbol, weightsToNumBits } from './huffman.js';
 export {
   LITERALS_LENGTH_DEFAULT_DISTRIBUTION,
   LITERALS_LENGTH_TABLE_LOG,

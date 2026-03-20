@@ -302,7 +302,13 @@ function parseFourStreamJumpTable(
   data: Uint8Array,
   pos: number,
   totalStreamsSize: number,
-): { stream1Size: number; stream2Size: number; stream3Size: number; stream4Size: number; streamOffset: number } {
+): {
+  stream1Size: number;
+  stream2Size: number;
+  stream3Size: number;
+  stream4Size: number;
+  streamOffset: number;
+} {
   if (totalStreamsSize < 10) {
     throw new ZstdError('4-stream mode requires at least 10 bytes', 'corruption_detected');
   }

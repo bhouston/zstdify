@@ -17,9 +17,7 @@ const user = {
   username: {
     function() {
       return (
-        this.object.lastName.substring(0, 5)
-              + this.object.firstName.substring(0, 3)
-              + Math.floor(Math.random() * 10)
+        this.object.lastName.substring(0, 5) + this.object.firstName.substring(0, 3) + Math.floor(Math.random() * 10)
       );
     },
   },

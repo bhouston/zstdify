@@ -37,7 +37,7 @@
     "typescript": "^5.6.0",
     "vega": "^5.30.0",
     "vega-lite": "^5.22.0",
-    "vitest": "^2.1.9",
+    "vitest": "^4.0.0",
     "zstddec": "^0.2.0",
     "zstdify": "workspace:*"
   }

@@ -1,5 +1,4 @@
-import type { WritableOptions } from 'node:stream';
-import { Writable } from 'node:stream';
+import { Writable, type WritableOptions } from 'node:stream';
 
 export default class BufferWritable extends Writable {
   #buf: Array<Buffer>;
@@ -9,19 +8,19 @@ export default class BufferWritable extends Writable {
     this.#buf = [];
   }
 
-  _write(chunk: Buffer, _encoding: string, callback: () => void = () => null) {
+  override _write(chunk: Buffer, encoding: string, callback: () => void = () => null) {
     this.#buf.push(chunk);
     callback();
   }
 
-  _writev(chunks: Array<{ chunk: Buffer; encoding: string }>, callback: () => void = () => null) {
+  override _writev(chunks: Array<{ chunk: Buffer; encoding: string }>, callback: () => void = () => null) {
     for (const { chunk } of chunks) {
       this.#buf.push(chunk);
     }
     callback();
   }
 
-  _final(callback: () => void = () => null) {
+  override _final(callback: () => void = () => null) {
     callback();
   }
 

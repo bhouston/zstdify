@@ -55,7 +55,7 @@ describe('normalizeDecoderDictionary', () => {
         'compressor dictionary training corpus repeated tokens phrase phrase phrase',
         'mesh primitive material shader pipeline render scene graph transform',
         'packet stream frame header footer checksum block entropy symbols',
-        'typescript package monorepo workspace pnpm vitest biome lint check',
+        'typescript package monorepo workspace pnpm vitest oxlint lint check',
         'offset match literal sequence table repeat mode huffman fse decode',
         'browser node runtime buffer array uint8array encoder decoder api',
       ];

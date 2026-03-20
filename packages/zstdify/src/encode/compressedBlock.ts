@@ -516,7 +516,17 @@ function symbolizedSequences(sequences: readonly Sequence[]): SymbolizedSequence
     ofExtraN[i] = ofCode;
     ofExtraValue[i] = ofEx;
   }
-  return { llCodes, llExtraN, llExtraValue, mlCodes, mlExtraN, mlExtraValue, ofCodes, ofExtraN, ofExtraValue };
+  return {
+    llCodes,
+    llExtraN,
+    llExtraValue,
+    mlCodes,
+    mlExtraN,
+    mlExtraValue,
+    ofCodes,
+    ofExtraN,
+    ofExtraValue,
+  };
 }
 
 function chooseStreamMode(
@@ -572,7 +582,7 @@ function chooseStreamMode(
           compressed.header.length * 8,
         ),
       }))
-      .sort((a, b) => a.estimate - b.estimate);
+      .toSorted((a, b) => a.estimate - b.estimate);
     const evalCount = Math.min(2, ranked.length);
     for (let i = 0; i < evalCount; i++) {
       const candidate = ranked[i];

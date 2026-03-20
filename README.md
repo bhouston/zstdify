@@ -26,7 +26,7 @@ Pure JavaScript/TypeScript zstd compression/decompression library. No native dep
   - Pure TypeScript dictionary training from sample payloads.
   - Zstd-inspired training options (`fastcover`/`cover`/`legacy` style knobs).
 - **Tree-shaken bundle size (Rollup + Terser, compressed)**:
-  - `zstdify/compress`: ~5.27 KiB  gzip / ~4.75 KiB brotli.
+  - `zstdify/compress`: ~5.27 KiB gzip / ~4.75 KiB brotli.
   - `zstdify/decompress`: ~8.63 KiB gzip / ~7.67 KiB brotli.
 - **Interop-focused**: `zstdify` output is decoded by the official `zstd` CLI and by the [zstddec](https://www.npmjs.com/package/zstddec) npm package; `zstd` CLI output is decoded by `zstdify`.
 - **Extensively tested**:
@@ -107,10 +107,12 @@ See [packages/cli/README.md](packages/cli/README.md) for full CLI documentation.
 
 ```bash
 pnpm install
+pnpm tsc # typescript-native
 pnpm build
-pnpm --filter zstdify-tests run bench:fetch-data
-pnpm test
-pnpm check
+pnpm lint # oxlint
+pnpm lint:fix
+pnpm format # oxfmt
+pnpm test # vitest
 ```
 
 ### Divergence debug tool
@@ -147,23 +149,23 @@ Throughput and compression ratio are compared against Node’s built-in `node:zl
 
 ## Throughput (MB/s)
 
-| Payload     | Category | Level | Compress zstdify | Compress Node | Decompress zstdify | Decompress Node | Decompress fzstd | Decompress zstddec |
-|-------------|------|----------|-------|------------------|---------------|-------------------|------------------|---------------------|
-| war-and-peace-txt | text     | 6 | 1.52 | 102.63 | 150.75 | 1019.58 | 256.78 | 922.89 |
-| shakespeare-complete-txt | text     | 6 | 1.35 | 96.08 | 142.93 | 970.29 | 240.50 | 887.62 |
-| enwik8      | text     | 6 | 1.70 | 120.36 | 149.69 | 1112.28 | 247.97 | 953.65 |
-| linux-kernel-tar | archive  | 6 | 2.72 | 177.01 | 232.84 | 1749.27 | 337.85 | 1448.23 |
-| apollo17-flightplan-pdf | document | 6 | 5.18 | 272.59 | 444.49 | 2968.65 | 497.71 | 2417.05 |
+| Payload                  | Category | Level | Compress zstdify | Compress Node | Decompress zstdify | Decompress Node | Decompress fzstd | Decompress zstddec |
+| ------------------------ | -------- | ----- | ---------------- | ------------- | ------------------ | --------------- | ---------------- | ------------------ |
+| war-and-peace-txt        | text     | 6     | 1.52             | 102.63        | 150.75             | 1019.58         | 256.78           | 922.89             |
+| shakespeare-complete-txt | text     | 6     | 1.35             | 96.08         | 142.93             | 970.29          | 240.50           | 887.62             |
+| enwik8                   | text     | 6     | 1.70             | 120.36        | 149.69             | 1112.28         | 247.97           | 953.65             |
+| linux-kernel-tar         | archive  | 6     | 2.72             | 177.01        | 232.84             | 1749.27         | 337.85           | 1448.23            |
+| apollo17-flightplan-pdf  | document | 6     | 5.18             | 272.59        | 444.49             | 2968.65         | 497.71           | 2417.05            |
 
 ## Compression ratio (compressed/original)
 
-| Payload     | Category | Level | zstdify | Node |
-|-------------|----------|-------|---------|------|
-| war-and-peace-txt | text     | 6 | 0.4002 | 0.3280 |
-| shakespeare-complete-txt | text     | 6 | 0.4171 | 0.3480 |
-| enwik8      | text     | 6 | 0.3724 | 0.3248 |
-| linux-kernel-tar | archive  | 6 | 0.2259 | 0.1995 |
-| apollo17-flightplan-pdf | document | 6 | 0.1315 | 0.1176 |
+| Payload                  | Category | Level | zstdify | Node   |
+| ------------------------ | -------- | ----- | ------- | ------ |
+| war-and-peace-txt        | text     | 6     | 0.4002  | 0.3280 |
+| shakespeare-complete-txt | text     | 6     | 0.4171  | 0.3480 |
+| enwik8                   | text     | 6     | 0.3724  | 0.3248 |
+| linux-kernel-tar         | archive  | 6     | 0.2259  | 0.1995 |
+| apollo17-flightplan-pdf  | document | 6     | 0.1315  | 0.1176 |
 
 Before benchmarking, fetch local corpus files (downloaded and stored locally, not committed):
 
@@ -179,10 +181,10 @@ pnpm --filter zstdify-tests run bench:update
 
 ### Bundle size benchmark (Rollup)
 
-| Target | Raw | Gzip | Brotli |
-|---|---:|---:|---:|
-| zstdify/compress | 28.82 KiB | 9.78 KiB | 8.83 KiB |
-| zstdify/decompress | 35.13 KiB | 10.66 KiB | 9.41 KiB |
+| Target                 |        Raw |      Gzip |    Brotli |
+| ---------------------- | ---------: | --------: | --------: |
+| zstdify/compress       |  28.82 KiB |  9.78 KiB |  8.83 KiB |
+| zstdify/decompress     |  35.13 KiB | 10.66 KiB |  9.41 KiB |
 | zstddec decoder + wasm | 127.37 KiB | 49.69 KiB | 40.66 KiB |
 
 To regenerate this snapshot:
@@ -210,7 +212,7 @@ pnpm make-release:cli
 ## Acknowledgements
 
 This project is made possible by the original [zstd](https://github.com/facebook/zstd) project by Meta and its contributors.
-The monorepo, project, and CLI structure were bootstrapped from [hdrify](https://github.com/bhouston/hdrify), which made this project much easier to build.  Many JavaScript optimization strategies were inspired by [fzstd](https://github.com/101arrowz/fzstd).  We use [simple-zstd](https://www.npmjs.com/package/simple-zstd) for validation against the zstd cli tool.
+The monorepo, project, and CLI structure were bootstrapped from [hdrify](https://github.com/bhouston/hdrify), which made this project much easier to build. Many JavaScript optimization strategies were inspired by [fzstd](https://github.com/101arrowz/fzstd). We use [simple-zstd](https://www.npmjs.com/package/simple-zstd) for validation against the zstd cli tool.
 
 # License
 

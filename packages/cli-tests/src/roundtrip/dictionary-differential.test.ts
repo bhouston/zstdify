@@ -19,7 +19,7 @@ function writeSamples(dir: string): string[] {
     'alpha beta gamma delta epsilon',
     'header vertex texture normal index tangent bitangent',
     'offset match literal sequence table repeat mode huffman fse decode',
-    'typescript package workspace monorepo vitest biome lint check',
+    'typescript package workspace monorepo vitest oxlint lint check',
     'mesh primitive material shader pipeline render scene graph transform',
     'packet stream frame header footer checksum block entropy symbols',
     'browser node runtime buffer array uint8array encoder decoder api',

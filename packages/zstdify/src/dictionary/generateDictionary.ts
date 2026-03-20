@@ -218,7 +218,7 @@ function maybeShrink(target: number, shrink: boolean | number): number {
 }
 
 function buildDictionaryBytes(candidates: CandidateScore[], maxDictSize: number): Uint8Array {
-  const sorted = [...candidates].sort((a, b) => {
+  const sorted = [...candidates].toSorted((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     if (b.hits !== a.hits) return b.hits - a.hits;
     if (b.bytes.length !== a.bytes.length) return b.bytes.length - a.bytes.length;

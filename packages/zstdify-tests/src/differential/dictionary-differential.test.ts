@@ -54,7 +54,7 @@ describe('differential dictionaries: zstd -> zstdify', () => {
         'compressor dictionary training corpus repeated tokens phrase phrase phrase',
         'mesh primitive material shader pipeline render scene graph transform',
         'packet stream frame header footer checksum block entropy symbols',
-        'typescript package monorepo workspace pnpm vitest biome lint check',
+        'typescript package monorepo workspace pnpm vitest oxlint lint check',
         'offset match literal sequence table repeat mode huffman fse decode',
         'browser node runtime buffer array uint8array encoder decoder api',
       ];
@@ -85,7 +85,10 @@ describe('differential dictionaries: zstd -> zstdify', () => {
         'offset match literal sequence table repeat mode huffman fse decode',
       ];
       const samples = sampleTexts.map((text) => new TextEncoder().encode(text));
-      const dictionaryBytes = generateDictionary(samples, { maxDictSize: 2048, algorithm: 'fastcover' });
+      const dictionaryBytes = generateDictionary(samples, {
+        maxDictSize: 2048,
+        algorithm: 'fastcover',
+      });
       writeFileSync(dictPath, Buffer.from(dictionaryBytes));
 
       const payload = new TextEncoder().encode('header vertex texture offset match literal sequence table');

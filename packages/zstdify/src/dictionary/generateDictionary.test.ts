@@ -12,8 +12,18 @@ describe('generateDictionary', () => {
       sampleBytes('alpha beta gamma theta lambda'),
       sampleBytes('vertex normal index tangent bitangent'),
     ];
-    const a = generateDictionary(samples, { maxDictSize: 1024, algorithm: 'fastcover', k: 24, d: 6 });
-    const b = generateDictionary(samples, { maxDictSize: 1024, algorithm: 'fastcover', k: 24, d: 6 });
+    const a = generateDictionary(samples, {
+      maxDictSize: 1024,
+      algorithm: 'fastcover',
+      k: 24,
+      d: 6,
+    });
+    const b = generateDictionary(samples, {
+      maxDictSize: 1024,
+      algorithm: 'fastcover',
+      k: 24,
+      d: 6,
+    });
     expect(a).toEqual(b);
   });
 
@@ -30,7 +40,11 @@ describe('generateDictionary', () => {
     ];
     const fast = generateDictionary(samples, { algorithm: 'fastcover', maxDictSize: 512 });
     const cover = generateDictionary(samples, { algorithm: 'cover', maxDictSize: 512 });
-    const legacy = generateDictionary(samples, { algorithm: 'legacy', maxDictSize: 512, selectivity: 8 });
+    const legacy = generateDictionary(samples, {
+      algorithm: 'legacy',
+      maxDictSize: 512,
+      selectivity: 8,
+    });
     expect(fast.length).toBeGreaterThan(0);
     expect(cover.length).toBeGreaterThan(0);
     expect(legacy.length).toBeGreaterThan(0);

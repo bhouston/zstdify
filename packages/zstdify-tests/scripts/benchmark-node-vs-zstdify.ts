@@ -104,7 +104,6 @@ async function main(): Promise<void> {
         decoder.decode(zstdifyDecompressInput, payloadBytes);
       });
 
-      // biome-ignore lint: sequential runs for stable, comparable timings
       await bench.run();
 
       const getMedianMs = (taskName: string): number => {

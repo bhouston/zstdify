@@ -14,15 +14,29 @@ function makeSamples(): Uint8Array[] {
 describe('dictionary generation integration', () => {
   it('generates deterministic dictionary bytes', () => {
     const samples = makeSamples();
-    const a = generateDictionary(samples, { maxDictSize: 1024, algorithm: 'fastcover', k: 24, d: 6 });
-    const b = generateDictionary(samples, { maxDictSize: 1024, algorithm: 'fastcover', k: 24, d: 6 });
+    const a = generateDictionary(samples, {
+      maxDictSize: 1024,
+      algorithm: 'fastcover',
+      k: 24,
+      d: 6,
+    });
+    const b = generateDictionary(samples, {
+      maxDictSize: 1024,
+      algorithm: 'fastcover',
+      k: 24,
+      d: 6,
+    });
     expect(a).toEqual(b);
     expect(a.length).toBeLessThanOrEqual(1024);
     expect(a.length).toBeGreaterThan(0);
   });
 
   it('round-trips with generated dictionary and explicit dictionary id', () => {
-    const dict = generateDictionary(makeSamples(), { maxDictSize: 1536, algorithm: 'cover', split: 100 });
+    const dict = generateDictionary(makeSamples(), {
+      maxDictSize: 1536,
+      algorithm: 'cover',
+      split: 100,
+    });
     const payload = new TextEncoder().encode('alpha beta gamma header vertex texture');
     const encoded = compress(payload, { dictionary: { bytes: dict, id: 42 } });
     expect(() => decompress(encoded)).toThrow(/dictionary/i);

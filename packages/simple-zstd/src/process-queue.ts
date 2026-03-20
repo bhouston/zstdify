@@ -2,7 +2,6 @@
 
 import Debug from 'debug';
 
-// biome-ignore lint/security/noSecrets: debug namespace for logging, not a secret
 const debug = Debug('SimpleZSTDQueue');
 
 export default class ProcessQueue<QueueItem> {
@@ -32,7 +31,7 @@ export default class ProcessQueue<QueueItem> {
     this.#destroyed = false;
 
     for (let i = 0; i < targetSize || 0; i += 1) {
-      void this.#createResource();
+      this.#createResource();
     }
   }
 
@@ -45,7 +44,6 @@ export default class ProcessQueue<QueueItem> {
   }
 
   async #createResource() {
-    // biome-ignore lint/security/noSecrets: debug log message, not a secret
     debug('createResource?', this.#queue.length);
     if (this.#destroyed) {
       debug('createResource skipped - queue destroyed');
@@ -67,7 +65,7 @@ export default class ProcessQueue<QueueItem> {
         setImmediate(() => {
           // Double-check destroyed flag in case it changed
           if (!this.#destroyed) {
-            void this.#createResource();
+            this.#createResource();
           }
         });
       }

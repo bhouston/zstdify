@@ -36,16 +36,22 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zstd
 
       - name: Run type check
-        run: pnpm tsgo
+        run: pnpm tsc
+
+      - name: Run build
+        run: pnpm build
 
       - name: Run linter
-        run: pnpm check
+        run: pnpm lint
+
+      - name: Run format check
+        run: pnpm format
 
       - name: Download benchmark data
         run: pnpm --filter zstdify-tests run bench:fetch-data
 
       - name: Run tests
-        run: pnpm vitest run
+        run: pnpm test
 
       - name: Run tests with coverage
         run: pnpm vitest run --coverage

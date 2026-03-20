@@ -99,7 +99,9 @@ let cachedDecompress: DecompressFn | null = null;
 async function resolveDecompress(): Promise<DecompressFn> {
   if (cachedDecompress) return cachedDecompress;
   try {
-    const sourceMod = (await import('../../../zstdify/dist/decompress.js')) as { decompress: DecompressFn };
+    const sourceMod = (await import('../../../zstdify/dist/decompress.js')) as {
+      decompress: DecompressFn;
+    };
     cachedDecompress = sourceMod.decompress;
     return cachedDecompress;
   } catch {
@@ -211,7 +213,13 @@ function parseLiteralsSectionHeaderLocal(
     }
     if (sizeFormat === 1) {
       const b1 = readByte(data, offset + 1);
-      return { blockType, sizeFormat, regeneratedSize: (b0 >> 4) + (b1 << 4), headerSize: 2, numStreams: 1 };
+      return {
+        blockType,
+        sizeFormat,
+        regeneratedSize: (b0 >> 4) + (b1 << 4),
+        headerSize: 2,
+        numStreams: 1,
+      };
     }
     const b1 = readByte(data, offset + 1);
     const b2 = readByte(data, offset + 2);

@@ -10,7 +10,7 @@
   "devDependencies": {
     "@types/node": "^24",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.9",
+    "vitest": "^4.0.0",
     "zstdify": "workspace:*",
     "zstdify-cli": "workspace:*"
   }

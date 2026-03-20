@@ -92,7 +92,12 @@ export function compress(input: Uint8Array, options?: CompressOptions): Uint8Arr
     const block = input.subarray(offset, offset + size);
     if (level > 0 && size > 0) {
       if (strategy) {
-        const plan = buildGreedySequences(block, { strategy, history, repOffsets, plannerState: sequencePlannerState });
+        const plan = buildGreedySequences(block, {
+          strategy,
+          history,
+          repOffsets,
+          plannerState: sequencePlannerState,
+        });
         if (plan.sequences.length > 0) {
           const payload = buildCompressedBlockPayload(plan.literals, plan.sequences, sequenceEntropyContext);
           if (payload) {

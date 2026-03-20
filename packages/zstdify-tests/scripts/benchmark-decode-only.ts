@@ -79,7 +79,6 @@ async function main(): Promise<void> {
         decoder.decode(nodeCompressed, payloadBytes);
       });
 
-      // biome-ignore lint: sequential runs for stable and comparable timings
       await bench.run();
 
       const getMedianMs = (taskName: string): number => {

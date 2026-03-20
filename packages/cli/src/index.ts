@@ -69,7 +69,6 @@ export async function runCli(argv: string[]): Promise<unknown> {
 class HelpShownError extends Error {
   constructor() {
     super('E_HELP_SHOWN');
-    // biome-ignore lint/security/noSecrets: not a secret
     this.name = 'HelpShownError';
   }
 }

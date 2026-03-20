@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "plugins": ["eslint", "typescript", "oxc", "unicorn", "react", "jsx-a11y"],
+  "rules": {
+    "no-unused-private-class-members": "off",
+    "unicorn/no-new-array": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+      "plugins": ["eslint", "typescript", "oxc", "unicorn", "react", "jsx-a11y", "vitest"]
+    }
+  ]
+}

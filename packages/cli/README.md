@@ -25,10 +25,10 @@ pnpm add -g zstdify-cli
 
 ## Commands
 
-| Command | Description |
-| ------- | ----------- |
-| `zstdify compress <input> <output>` | Compress a file with zstd |
-| `zstdify extract <input> <output>` | Decompress a zstd-compressed file |
+| Command                                         | Description                                      |
+| ----------------------------------------------- | ------------------------------------------------ |
+| `zstdify compress <input> <output>`             | Compress a file with zstd                        |
+| `zstdify extract <input> <output>`              | Decompress a zstd-compressed file                |
 | `zstdify dict train <output> --input <path>...` | Train a dictionary from sample files/directories |
 
 Aliases: `compress` / `c`, `extract` / `x`.

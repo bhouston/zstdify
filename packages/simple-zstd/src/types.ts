@@ -1,5 +1,5 @@
-import type { SpawnOptions } from 'node:child_process';
-import type { DuplexOptions } from 'node:stream';
+import type { SpawnOptions } from 'child_process';
+import type { DuplexOptions } from 'stream';
 
 export interface CompressOpts {
   compLevel?: number;
@@ -17,8 +17,7 @@ export interface DecompressOpts {
 }
 
 export interface CreateDictionaryOpts {
-  /** Training samples as file paths and/or in-memory buffers. */
-  trainingFiles: (string | Buffer)[];
+  trainingFiles: Array<string | Buffer>;
   maxDictSize?: number;
   zstdOptions?: string[];
   spawnOptions?: SpawnOptions;

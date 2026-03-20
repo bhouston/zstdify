@@ -12,7 +12,7 @@ function collectFiles(inputPath: string, recursive: boolean, out: string[]): voi
   if (!stat.isDirectory()) {
     return;
   }
-  const entries = fs.readdirSync(inputPath, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  const entries = fs.readdirSync(inputPath, { withFileTypes: true }).toSorted((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     const fullPath = path.join(inputPath, entry.name);
     if (entry.isFile()) {

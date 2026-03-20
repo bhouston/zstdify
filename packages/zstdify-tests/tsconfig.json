@@ -1,8 +1,8 @@
 {
-  "extends": "../../tsconfig.json",
-  "include": ["src"],
+  "extends": "../../tsconfig.node.json",
   "compilerOptions": {
-    "types": ["node"],
-    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
-  }
+    "composite": true
+  },
+  "include": ["src"],
+  "references": [{ "path": "../zstdify" }, { "path": "../simple-zstd" }]
 }

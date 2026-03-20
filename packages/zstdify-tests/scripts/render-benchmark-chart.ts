@@ -112,13 +112,11 @@ function main(): void {
             field: 'impl',
             type: 'nominal',
             scale: { domain: implDomain, range: implColors },
-            // biome-ignore lint/security/noSecrets: chart legend label, not a secret
             legend: { title: 'Implementation' },
           },
         },
       },
       {
-        // biome-ignore lint/security/noSecrets: chart title, not a secret
         title: 'Decompression throughput (MB/s)',
         data: { values: decompressRows },
         mark: 'bar',
@@ -130,7 +128,6 @@ function main(): void {
             field: 'impl',
             type: 'nominal',
             scale: { domain: implDomain, range: implColors },
-            // biome-ignore lint/security/noSecrets: chart legend label, not a secret
             legend: { title: 'Implementation' },
           },
         },

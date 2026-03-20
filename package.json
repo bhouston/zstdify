@@ -2,28 +2,35 @@
   "name": "zstdify-monorepo",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@10.17.0",
+  "type": "module",
   "scripts": {
+    "prepare": "husky",
     "build": "pnpm -r build",
     "clean": "rimraf dist packages/**/dist node_modules packages/**/node_modules",
-    "check": "biome check --write",
+    "check": "pnpm lint && pnpm format",
+    "tsc": "tsgo -b",
     "tsgo": "pnpm -r tsgo",
     "test": "pnpm vitest",
     "coverage": "vitest run --coverage",
-    "lint": "pnpm biome check",
+    "format": "oxfmt .",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
     "make-release:zstdify": "node scripts/make-release.ts packages/zstdify",
     "make-release:cli": "node scripts/make-release.ts packages/cli"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.4",
     "@types/node": "^24",
-    "@typescript/native-preview": "7.0.0-dev.20251202.1",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@typescript/native-preview": "7.0.0-dev.20251229.1",
+    "@vitest/coverage-v8": "^4.0.0",
+    "husky": "^9.1.7",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.56.0",
     "rimraf": "^6.0.1",
-    "vitest": "^2.1.9"
+    "vite": "^8.0.0",
+    "vitest": "^4.0.0"
   },
   "engines": {
     "node": ">=24.0.0"
   },
-  "type": "module"
+  "packageManager": "pnpm@10.17.0"
 }

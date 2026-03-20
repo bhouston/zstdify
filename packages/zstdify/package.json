@@ -1,65 +1,65 @@
 {
-    "name": "zstdify",
-    "description": "Pure TypeScript zstd compression library",
-    "version": "1.4.0",
-    "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
-    "sideEffects": false,
-    "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js",
-            "default": "./dist/index.js"
-        },
-        "./compress": {
-            "types": "./dist/compress.d.ts",
-            "import": "./dist/compress.js",
-            "default": "./dist/compress.js"
-        },
-        "./decompress": {
-            "types": "./dist/decompress.d.ts",
-            "import": "./dist/decompress.js",
-            "default": "./dist/decompress.js"
-        },
-        "./dictionary": {
-            "types": "./dist/dictionary/generateDictionary.d.ts",
-            "import": "./dist/dictionary/generateDictionary.js",
-            "default": "./dist/dictionary/generateDictionary.js"
-        },
-        "./package.json": "./package.json"
+  "name": "zstdify",
+  "version": "1.4.0",
+  "description": "Pure TypeScript zstd compression library",
+  "keywords": [
+    "compression",
+    "decompression",
+    "rfc8878",
+    "zstd"
+  ],
+  "bugs": {
+    "url": "https://github.com/bhouston/zstdify/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bhouston/zstdify.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
-    "license": "MIT",
-    "keywords": [
-        "zstd",
-        "compression",
-        "decompression",
-        "rfc8878"
-    ],
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/bhouston/zstdify.git"
+    "./compress": {
+      "types": "./dist/compress.d.ts",
+      "import": "./dist/compress.js",
+      "default": "./dist/compress.js"
     },
-    "bugs": {
-        "url": "https://github.com/bhouston/zstdify/issues"
+    "./decompress": {
+      "types": "./dist/decompress.d.ts",
+      "import": "./dist/decompress.js",
+      "default": "./dist/decompress.js"
     },
-    "publishConfig": {
-        "registry": "https://registry.npmjs.org/",
-        "access": "public"
+    "./dictionary": {
+      "types": "./dist/dictionary/generateDictionary.d.ts",
+      "import": "./dist/dictionary/generateDictionary.js",
+      "default": "./dist/dictionary/generateDictionary.js"
     },
-    "scripts": {
-        "build": "tsgo",
-        "dev": "tsgo --watch",
-        "tsgo": "tsgo",
-        "test": "vitest"
-    },
-    "devDependencies": {
-        "vitest": "^2.1.9"
-    },
-    "engines": {
-        "node": ">=24.0.0"
-    },
-    "files": [
-        "dist"
-    ]
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsgo",
+    "dev": "tsgo --watch",
+    "tsgo": "tsgo",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
 }

@@ -133,7 +133,10 @@ describe('zstdify API', () => {
       { maxDictSize: 1024 },
     );
     const payload = new TextEncoder().encode('offset match literal sequence table');
-    const compressed = compress(payload, { dictionary: { bytes: dictionary, id: 101 }, noDictId: true });
+    const compressed = compress(payload, {
+      dictionary: { bytes: dictionary, id: 101 },
+      noDictId: true,
+    });
     expect(decompress(compressed)).toEqual(payload);
   });
 

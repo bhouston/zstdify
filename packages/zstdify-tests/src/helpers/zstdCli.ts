@@ -62,7 +62,7 @@ export async function zstdCompress(input: Uint8Array, args: string[]): Promise<U
     return new Uint8Array(compressed);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`zstd compress failed: ${message}`);
+    throw new Error(`zstd compress failed: ${message}`, { cause: error });
   }
 }
 
@@ -76,7 +76,7 @@ export async function zstdDecompress(input: Uint8Array, args: string[] = []): Pr
     return new Uint8Array(decompressed);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`zstd decompress failed: ${message}`);
+    throw new Error(`zstd decompress failed: ${message}`, { cause: error });
   }
 }
 

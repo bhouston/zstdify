@@ -28,7 +28,7 @@ export default class PeekPassThrough extends Duplex {
     this.#ended = false;
   }
 
-  _write(chunk: Buffer, encoding: BufferEncoding, callback: (error?: Error | null) => void) {
+  override _write(chunk: Buffer, encoding: BufferEncoding, callback: (error?: Error | null) => void) {
     // If we already peeked and have a swapped stream, write to it
     if (this.#peeked && this.#swappedStream) {
       this.#swappedStream.write(chunk, encoding, callback);
@@ -53,7 +53,7 @@ export default class PeekPassThrough extends Duplex {
     }
   }
 
-  _final(callback: (error?: Error | null) => void) {
+  override _final(callback: (error?: Error | null) => void) {
     // If we haven't peeked yet and stream is ending, peek now
     if (!this.#peeked) {
       this.#performPeek(callback);
@@ -70,10 +70,10 @@ export default class PeekPassThrough extends Duplex {
     }
   }
 
-  _read(_size: number) {
+  override _read(_size: number) {
     // If we have a swapped stream, resume it if paused
     if (this.#swappedStream) {
-      if (this.#swappedStream.isPaused?.()) {
+      if (this.#swappedStream.isPaused && this.#swappedStream.isPaused()) {
         this.#swappedStream.resume();
       }
     }
@@ -115,7 +115,7 @@ export default class PeekPassThrough extends Duplex {
 
         // Resume reading when downstream is ready
         this.on('drain', () => {
-          if (swappedStream.isPaused?.()) {
+          if (swappedStream.isPaused && swappedStream.isPaused()) {
             swappedStream.resume();
           }
         });
@@ -126,7 +126,7 @@ export default class PeekPassThrough extends Duplex {
         }
 
         // Ensure the swapped stream is in flowing mode
-        if (swappedStream.isPaused?.()) {
+        if (swappedStream.isPaused && swappedStream.isPaused()) {
           swappedStream.resume();
         }
       } else {
@@ -144,10 +144,10 @@ export default class PeekPassThrough extends Duplex {
     });
   }
 
-  _destroy(error: Error | null, cb: (err: Error | null) => void) {
+  override _destroy(error: Error | null, callback: (error: Error | null) => void) {
     if (this.#swappedStream && !this.#swappedStream.destroyed) {
       this.#swappedStream.destroy();
     }
-    cb(error);
+    callback(error);
   }
 }

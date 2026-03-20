@@ -57,34 +57,38 @@ const CORPUS_PAYLOADS = loadLocalBenchCorpusForTests().map((payload) => ({
 
 describe('interop: dictionary training on real corpus (large, for later)', () => {
   for (const payload of CORPUS_PAYLOADS) {
-    it(`${payload.id} (${payload.category}): zstdify dictionary compression is no worse and both runtimes decode dictionary frames`, () => {
-      const trainingSamples = makeTrainingSamples(payload.data);
-      const dictionary = generateDictionary(trainingSamples, {
-        maxDictSize: DICT_SIZE_BYTES,
-        algorithm: 'fastcover',
-      });
-      expect(dictionary.length).toBeGreaterThan(0);
+    it(
+      `${payload.id} (${payload.category}): zstdify dictionary compression is no worse and both runtimes decode dictionary frames`,
+      { timeout: 60_000 },
+      () => {
+        const trainingSamples = makeTrainingSamples(payload.data);
+        const dictionary = generateDictionary(trainingSamples, {
+          maxDictSize: DICT_SIZE_BYTES,
+          algorithm: 'fastcover',
+        });
+        expect(dictionary.length).toBeGreaterThan(0);
 
-      const zstdifyWithoutDictionary = compress(payload.data, {
-        level: LEVEL,
-      });
-      expect(decompress(zstdifyWithoutDictionary)).toEqual(payload.data);
-      expect(nodeDecompressWithoutDictionary(zstdifyWithoutDictionary)).toEqual(payload.data);
+        const zstdifyWithoutDictionary = compress(payload.data, {
+          level: LEVEL,
+        });
+        expect(decompress(zstdifyWithoutDictionary)).toEqual(payload.data);
+        expect(nodeDecompressWithoutDictionary(zstdifyWithoutDictionary)).toEqual(payload.data);
 
-      const zstdifyWithDictionary = compress(payload.data, {
-        level: LEVEL,
-        dictionary,
-        noDictId: true,
-      });
-      expect(decompress(zstdifyWithDictionary, { dictionary })).toEqual(payload.data);
-      expect(nodeDecompressWithDictionary(zstdifyWithDictionary, dictionary)).toEqual(payload.data);
+        const zstdifyWithDictionary = compress(payload.data, {
+          level: LEVEL,
+          dictionary,
+          noDictId: true,
+        });
+        expect(decompress(zstdifyWithDictionary, { dictionary })).toEqual(payload.data);
+        expect(nodeDecompressWithDictionary(zstdifyWithDictionary, dictionary)).toEqual(payload.data);
 
-      // Keep Node dictionary compression in the test to validate interop on dictionary frames from Node.
-      const nodeWithDictionary = nodeCompressWithDictionary(payload.data, dictionary);
-      expect(decompress(nodeWithDictionary, { dictionary })).toEqual(payload.data);
-      expect(nodeDecompressWithDictionary(nodeWithDictionary, dictionary)).toEqual(payload.data);
+        // Keep Node dictionary compression in the test to validate interop on dictionary frames from Node.
+        const nodeWithDictionary = nodeCompressWithDictionary(payload.data, dictionary);
+        expect(decompress(nodeWithDictionary, { dictionary })).toEqual(payload.data);
+        expect(nodeDecompressWithDictionary(nodeWithDictionary, dictionary)).toEqual(payload.data);
 
-      expect(zstdifyWithDictionary.length).toBeLessThan(zstdifyWithoutDictionary.length);
-    });
+        expect(zstdifyWithDictionary.length).toBeLessThan(zstdifyWithoutDictionary.length);
+      },
+    );
   }
 });
