@@ -55,7 +55,7 @@ const CORPUS_PAYLOADS = loadLocalBenchCorpusForTests().map((payload) => ({
   data: payload.data,
 }));
 
-describe('interop: dictionary training on real corpus (large, for later)', () => {
+describe.skipIf(CORPUS_PAYLOADS.length === 0)('interop: dictionary training on real corpus (large, for later)', () => {
   for (const payload of CORPUS_PAYLOADS) {
     it(
       `${payload.id} (${payload.category}): zstdify dictionary compression is no worse and both runtimes decode dictionary frames`,
