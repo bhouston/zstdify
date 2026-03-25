@@ -93,7 +93,7 @@ MIT
 
 ## Author
 
-[Ben Houston](https://benhouston3d.com), Sponsored by [Land of Assets](https://landofassets.com)
+[Ben Houston](https://ben3d.ca), Sponsored by [Land of Assets](https://landofassets.com)
 
 [npm]: https://img.shields.io/npm/v/zstdify-cli
 [npm-url]: https://www.npmjs.com/package/zstdify-cli
