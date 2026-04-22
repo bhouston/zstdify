@@ -53,20 +53,17 @@ function buildRLETable(symbol: number, tableLog: number): FSEDecodeTable {
       return cached;
     }
   }
-  const tableSize = 1 << tableLog;
-  const symbolByState = new Uint16Array(tableSize);
-  const bitsByState = new Uint8Array(tableSize);
-  const baselineByState = new Int32Array(tableSize);
-  for (let i = 0; i < tableSize; i++) {
-    symbolByState[i] = symbol;
-    bitsByState[i] = tableLog;
-  }
+  // Sequence RLE mode is a degenerate single-state table: no initial-state bits
+  // are read, and no state-update bits are consumed while decoding tuples.
+  const symbolByState = new Uint16Array([symbol]);
+  const bitsByState = new Uint8Array([0]);
+  const baselineByState = new Int32Array([0]);
   const table: FSEDecodeTable = {
     symbol: symbolByState,
     numBits: bitsByState,
     baseline: baselineByState,
-    tableLog,
-    length: tableSize,
+    tableLog: 0,
+    length: 1,
   };
   if (cache) {
     cache[symbol] = table;
@@ -88,7 +85,7 @@ export function decodeAndExecuteSequencesInto(
   updateHistory: boolean,
   collectMetadata = true,
 ): FusedDecodeExecuteResult {
-  if (seqSize < 2) {
+  if (seqSize < 1) {
     throw new ZstdError('Sequences section too short', 'corruption_detected');
   }
   const sectionStart = seqOffset;
@@ -139,7 +136,7 @@ export function decodeAndExecuteSequencesInto(
     if (llMode === 1) {
       if (pos >= sectionStart + seqSize) throw new ZstdError('Sequences section truncated', 'corruption_detected');
       llTable = buildRLETable(blockContent[pos]!, 6);
-      llTableLog = 6;
+      llTableLog = 0;
       pos++;
     } else if (llMode === 2) {
       const result = readNCount(blockContent, pos, 35, 9);
@@ -155,7 +152,7 @@ export function decodeAndExecuteSequencesInto(
     if (ofMode === 1) {
       if (pos >= sectionStart + seqSize) throw new ZstdError('Sequences section truncated', 'corruption_detected');
       ofTable = buildRLETable(blockContent[pos]!, 5);
-      ofTableLog = 5;
+      ofTableLog = 0;
       pos++;
     } else if (ofMode === 2) {
       const result = readNCount(blockContent, pos, 31, 8);
@@ -171,7 +168,7 @@ export function decodeAndExecuteSequencesInto(
     if (mlMode === 1) {
       if (pos >= sectionStart + seqSize) throw new ZstdError('Sequences section truncated', 'corruption_detected');
       mlTable = buildRLETable(blockContent[pos]!, 6);
-      mlTableLog = 6;
+      mlTableLog = 0;
       pos++;
     } else if (mlMode === 2) {
       const result = readNCount(blockContent, pos, 52, 9);
